@@ -12,35 +12,36 @@ use hyper::{
 };
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-use crate::{Cases, Error};
+use crate::{Connector, Error};
 
-pub struct MockStream {
+pub struct MockStream<F> {
     res_data: Vec<u8>,
     res_pos: usize,
     req_data: Vec<u8>,
     waker: Option<Waker>,
-    cases: Cases,
+
+    connector: Connector<F>,
 }
 
-impl MockStream {
-    pub(crate) fn new(cases: Cases) -> Self {
+impl<F> MockStream<F> {
+    pub(crate) fn new(connector: Connector<F>) -> Self {
         Self {
             res_data: Vec::new(),
             res_pos: 0,
             req_data: Vec::new(),
             waker: None,
-            cases,
+            connector,
         }
     }
 }
 
-impl Connection for MockStream {
+impl<F> Connection for MockStream<F> {
     fn connected(&self) -> Connected {
         Connected::new()
     }
 }
 
-impl AsyncRead for MockStream {
+impl<F> AsyncRead for MockStream<F> {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -61,7 +62,7 @@ impl AsyncRead for MockStream {
     }
 }
 
-impl AsyncWrite for MockStream {
+impl<F> AsyncWrite for MockStream<F> {
     fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
         Poll::Ready(Ok(()))
     }
@@ -78,6 +79,9 @@ impl AsyncWrite for MockStream {
         let mut headers = [httparse::EMPTY_HEADER; 64];
         let mut req = Request::new(&mut headers);
         self.req_data.extend(buf);
+
+        // TODO: handle errors with a proper response
+
         let body = match req
             .parse(&self.res_data)
             .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?
@@ -86,10 +90,12 @@ impl AsyncWrite for MockStream {
             Status::Partial => &[],
         };
 
-        match self.cases.matches(req, body) {
+        match self.connector.matches(req, body) {
             Ok(Some(res)) => {
                 self.res_data = into_data(res)?;
-                self.waker.take().map(|w| w.wake());
+                if let Some(w) = self.waker.take() {
+                    w.wake()
+                }
 
                 Poll::Ready(Ok(buf.len()))
             }
