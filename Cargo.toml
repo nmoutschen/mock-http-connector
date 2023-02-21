@@ -1,0 +1,17 @@
+[package]
+name = "mock-http-connector"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+httparse = "1.8.0"
+hyper = { version = "0.14.24", features = ["client", "http1"] }
+thiserror = "1.0.38"
+tokio = { version = "1.25.0", features = ["io-util"] }
+tracing = "0.1.37"
+
+[dev-dependencies]
+hyper = { version = "0.14.24", features = ["client", "http1", "runtime"] }
+tokio = { version = "1.25.0", features = ["io-util", "macros", "rt-multi-thread"] }
