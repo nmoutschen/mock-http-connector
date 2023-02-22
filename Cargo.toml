@@ -5,9 +5,15 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = ["json"]
+json = ["dep:serde_json", "dep:serde"]
+
 [dependencies]
 httparse = "1.8.0"
 hyper = { version = "0.14.24", features = ["client", "http1"] }
+serde = { version = "1.0.152", optional = true }
+serde_json = { version = "1.0.93", optional = true }
 thiserror = "1.0.38"
 tokio = { version = "1.25.0", features = ["io-util"] }
 tracing = "0.1.37"

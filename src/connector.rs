@@ -9,22 +9,25 @@ use std::{
 use hyper::{service::Service, Request, Response, Uri};
 
 use crate::{
-    handler::{DefaultErrorHandler, ErrorHandler},
+    error::BoxError,
+    handler::{DefaultErrorHandler, DefaultHandler, DefaultMissingHandler},
     stream::MockStream,
     Builder, Case, Error,
 };
 
 #[derive(Default)]
-pub struct Connector<F = DefaultErrorHandler> {
+pub struct Connector<FE = DefaultErrorHandler, FM = DefaultMissingHandler> {
     cases: Arc<Mutex<Vec<Case>>>,
-    error_handler: Arc<F>,
+    error_handler: Arc<FE>,
+    missing_handler: Arc<FM>,
 }
 
-impl<F> Clone for Connector<F> {
+impl<FE, FM> Clone for Connector<FE, FM> {
     fn clone(&self) -> Self {
         Self {
             cases: self.cases.clone(),
             error_handler: self.error_handler.clone(),
+            missing_handler: self.missing_handler.clone(),
         }
     }
 }
@@ -35,11 +38,12 @@ impl Connector {
     }
 }
 
-impl<F> Connector<F> {
-    pub(crate) fn new(cases: Vec<Case>, error_handler: F) -> Self {
+impl<FE, FM> Connector<FE, FM> {
+    pub(crate) fn new(cases: Vec<Case>, error_handler: FE, missing_handler: FM) -> Self {
         Self {
             cases: Arc::new(Mutex::new(cases)),
             error_handler: Arc::new(error_handler),
+            missing_handler: Arc::new(missing_handler),
         }
     }
 
@@ -47,10 +51,11 @@ impl<F> Connector<F> {
         &self,
         req: httparse::Request,
         body: &[u8],
+        uri: &Uri,
     ) -> Result<Option<Response<String>>, Error> {
         let mut cases = self.cases.lock()?;
 
-        let req = into_request(req, body);
+        let req = into_request(req, body, uri)?;
 
         for case in cases.iter_mut() {
             let res = case.with.with(&req)?;
@@ -78,17 +83,26 @@ impl<F> Connector<F> {
     }
 }
 
-impl<F> Connector<F>
+impl<FE, FM> Connector<FE, FM>
 where
-    F: ErrorHandler,
+    FE: DefaultHandler,
 {
     pub(crate) fn error(&self) -> Response<String> {
-        self.error_handler.handle_error()
+        self.error_handler.handle()
     }
 }
 
-impl<F> Service<Uri> for Connector<F> {
-    type Response = MockStream<F>;
+impl<FE, FM> Connector<FE, FM>
+where
+    FM: DefaultHandler,
+{
+    pub(crate) fn missing(&self) -> Response<String> {
+        self.missing_handler.handle()
+    }
+}
+
+impl<FE, FM> Service<Uri> for Connector<FE, FM> {
+    type Response = MockStream<FE, FM>;
     type Error = io::Error;
     type Future = Ready<Result<Self::Response, Self::Error>>;
 
@@ -96,16 +110,26 @@ impl<F> Service<Uri> for Connector<F> {
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, _req: Uri) -> Self::Future {
-        ready(Ok(MockStream::new(self.clone())))
+    fn call(&mut self, req: Uri) -> Self::Future {
+        ready(Ok(MockStream::new(self.clone(), req)))
     }
 }
 
-fn into_request(req: httparse::Request, body: &[u8]) -> Request<String> {
-    let body = from_utf8(body).unwrap().to_string();
+fn into_request(
+    req: httparse::Request,
+    body: &[u8],
+    uri: &Uri,
+) -> Result<Request<String>, BoxError> {
+    let body = from_utf8(body)?.to_string();
 
-    let mut builder = Request::builder();
+    let mut builder = Request::builder().uri(uri);
 
+    if let Some(path) = req.path {
+        // TODO: handle errors
+        let mut parts = uri.clone().into_parts();
+        parts.path_and_query = Some(path.parse()?);
+        builder = builder.uri(Uri::from_parts(parts)?);
+    }
     if let Some(method) = req.method {
         builder = builder.method(method);
     }
@@ -116,5 +140,5 @@ fn into_request(req: httparse::Request, body: &[u8]) -> Request<String> {
         }
     }
 
-    builder.body(body).unwrap()
+    Ok(builder.body(body)?)
 }

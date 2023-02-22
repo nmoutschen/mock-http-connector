@@ -1,6 +1,5 @@
 mod builder;
 mod case;
-mod case_old;
 mod connector;
 mod error;
 mod handler;
@@ -13,24 +12,26 @@ pub use error::Error;
 
 #[cfg(test)]
 mod tests {
-    use hyper::{Body, Request, Response};
+    use hyper::{Body, Request};
 
     use super::*;
 
     #[tokio::test]
-    async fn it_compiles() {
+    async fn simple_get() {
         let mut builder = Connector::builder();
         builder
             .expect()
             .times(1)
-            .returning(|_| Response::builder().body(""));
+            .with_uri("http://example.com/test")
+            .unwrap()
+            .returning(|_| "OK");
         let connector = builder.build();
 
         let client = hyper::Client::builder().build::<_, Body>(connector.clone());
         let res = client
             .request(
                 Request::builder()
-                    .uri("http://example.com/")
+                    .uri("http://example.com/test")
                     .body("".to_string().into())
                     .unwrap(),
             )

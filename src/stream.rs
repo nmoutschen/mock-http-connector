@@ -8,40 +8,43 @@ use std::{
 use httparse::{Request, Status};
 use hyper::{
     client::connect::{Connected, Connection},
-    Response,
+    Response, Uri,
 };
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-use crate::{Connector, Error};
+use crate::{handler::DefaultHandler, Connector};
 
-pub struct MockStream<F> {
+pub struct MockStream<FE, FM> {
     res_data: Vec<u8>,
     res_pos: usize,
     req_data: Vec<u8>,
     waker: Option<Waker>,
 
-    connector: Connector<F>,
+    uri: Uri,
+
+    connector: Connector<FE, FM>,
 }
 
-impl<F> MockStream<F> {
-    pub(crate) fn new(connector: Connector<F>) -> Self {
+impl<FE, FM> MockStream<FE, FM> {
+    pub(crate) fn new(connector: Connector<FE, FM>, uri: Uri) -> Self {
         Self {
             res_data: Vec::new(),
             res_pos: 0,
             req_data: Vec::new(),
             waker: None,
+            uri,
             connector,
         }
     }
 }
 
-impl<F> Connection for MockStream<F> {
+impl<FE, FM> Connection for MockStream<FE, FM> {
     fn connected(&self) -> Connected {
         Connected::new()
     }
 }
 
-impl<F> AsyncRead for MockStream<F> {
+impl<FE, FM> AsyncRead for MockStream<FE, FM> {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -62,7 +65,11 @@ impl<F> AsyncRead for MockStream<F> {
     }
 }
 
-impl<F> AsyncWrite for MockStream<F> {
+impl<FE, FM> AsyncWrite for MockStream<FE, FM>
+where
+    FE: DefaultHandler,
+    FM: DefaultHandler,
+{
     fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
         Poll::Ready(Ok(()))
     }
@@ -80,31 +87,33 @@ impl<F> AsyncWrite for MockStream<F> {
         let mut req = Request::new(&mut headers);
         self.req_data.extend(buf);
 
-        // TODO: handle errors with a proper response
+        let status = match dbg!(req.parse(&self.req_data)) {
+            Ok(status) => status,
+            Err(_err) => {
+                self.res_data = into_data(self.connector.error())?;
+                if let Some(w) = self.waker.take() {
+                    w.wake()
+                }
+                return Poll::Ready(Ok(buf.len()));
+            }
+        };
 
-        let body = match req
-            .parse(&self.res_data)
-            .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?
-        {
+        let body = match status {
             Status::Complete(body_pos) => &self.req_data[body_pos..],
             Status::Partial => &[],
         };
 
-        match self.connector.matches(req, body) {
-            Ok(Some(res)) => {
-                self.res_data = into_data(res)?;
-                if let Some(w) = self.waker.take() {
-                    w.wake()
-                }
+        self.res_data = match self.connector.matches(req, body, &self.uri) {
+            Ok(Some(res)) => into_data(res)?,
+            Ok(None) => into_data(self.connector.missing())?,
+            Err(_err) => into_data(self.connector.error())?,
+        };
 
-                Poll::Ready(Ok(buf.len()))
-            }
-            Ok(None) => Poll::Ready(Err(io::Error::new(
-                io::ErrorKind::BrokenPipe,
-                Error::ResponseNotFound,
-            ))),
-            Err(err) => Poll::Ready(Err(io::Error::new(io::ErrorKind::BrokenPipe, err))),
+        if let Some(w) = self.waker.take() {
+            w.wake()
         }
+
+        Poll::Ready(Ok(buf.len()))
     }
 }
 
