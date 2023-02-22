@@ -15,6 +15,7 @@ use crate::{
     Builder, Case, Error,
 };
 
+/// Mock connector for [`hyper::Client`]
 #[derive(Default)]
 pub struct Connector<FE = DefaultErrorHandler, FM = DefaultMissingHandler> {
     cases: Arc<Mutex<Vec<Case>>>,
@@ -33,6 +34,8 @@ impl<FE, FM> Clone for Connector<FE, FM> {
 }
 
 impl Connector {
+    /// Create a new [`Builder`] to specify expected [`Request`]s and their corresponding
+    /// [`Response`]s
     pub fn builder() -> Builder {
         Builder::default()
     }
@@ -70,6 +73,9 @@ impl<FE, FM> Connector<FE, FM> {
         Ok(None)
     }
 
+    /// Check if all the mock cases were called the right amount of time
+    ///
+    /// If not, this will return an error with all the mock cases that failed.
     pub fn checkpoint(&self) -> Result<(), Error> {
         let cases = self.cases.lock()?;
         let checkpoints = cases

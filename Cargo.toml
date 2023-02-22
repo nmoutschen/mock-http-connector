@@ -29,3 +29,4 @@ hyper = { version = "0.14.24", features = ["client", "http1", "runtime"] }
 rstest = "0.16.0"
 speculoos = "0.11.0"
 tokio = { version = "1.25.0", features = ["io-util", "macros", "rt-multi-thread"] }
+tokio-test = "0.4.2"
