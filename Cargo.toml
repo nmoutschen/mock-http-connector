@@ -2,6 +2,12 @@
 name = "mock-http-connector"
 version = "0.1.0"
 edition = "2021"
+authors = [
+    "Nicolas Moutschen <nicolas.moutschen@gmail.com>"
+]
+description = "Mock hyper HTTPConnector"
+repository = "https://github.com/nmoutschen/mock-http-connector/"
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
