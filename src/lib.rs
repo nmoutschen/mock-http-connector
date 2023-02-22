@@ -28,7 +28,7 @@ mod tests {
         let connector = builder.build();
 
         let client = hyper::Client::builder().build::<_, Body>(connector.clone());
-        let res = client
+        let _res = client
             .request(
                 Request::builder()
                     .uri("http://example.com/test")
@@ -39,7 +39,5 @@ mod tests {
             .unwrap();
 
         connector.checkpoint().unwrap();
-
-        dbg!(res);
     }
 }

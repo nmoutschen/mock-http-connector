@@ -21,6 +21,10 @@ pub enum Error {
 
     #[error("checkpoint error: {0:?}")]
     Checkpoint(Vec<Checkpoint>),
+
+    #[cfg(feature = "json")]
+    #[error("JSON serde error: {0}")]
+    Json(#[from] serde_json::Error),
 }
 
 impl<T> From<PoisonError<T>> for Error {

@@ -65,6 +65,8 @@ impl<FE, FM> Connector<FE, FM> {
             }
         }
 
+        // Couldn't find a match, log the error
+        eprintln!("no match found for request {req:?}");
         Ok(None)
     }
 
@@ -135,7 +137,6 @@ fn into_request(
     }
     for header in req.headers {
         if !header.name.is_empty() {
-            dbg!(&header);
             builder = builder.header(header.name, header.value);
         }
     }

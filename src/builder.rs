@@ -1,13 +1,11 @@
 use crate::{
     case::Case,
-    error::BoxError,
     handler::{
         DefaultErrorHandler, DefaultMissingHandler, DefaultWith, Returning, With, WithHandler,
     },
-    Connector,
+    Connector, Error,
 };
-use hyper::{header::IntoHeaderName, http::HeaderValue, Uri};
-use std::error::Error as StdError;
+use hyper::{header::IntoHeaderName, http::HeaderValue, Method, Uri};
 
 pub struct Builder<FE = DefaultErrorHandler, FM = DefaultMissingHandler> {
     cases: Vec<Case>,
@@ -74,10 +72,10 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
         }
     }
 
-    pub fn with_uri<U>(self, uri: U) -> Result<CaseBuilder<'b, FE, FM, WithHandler>, BoxError>
+    pub fn with_uri<U>(self, uri: U) -> Result<CaseBuilder<'b, FE, FM, WithHandler>, Error>
     where
         U: TryInto<Uri>,
-        U::Error: StdError + Send + Sync + 'static,
+        U::Error: Into<hyper::http::Error>,
     {
         Ok(CaseBuilder {
             builder: self.builder,
@@ -86,16 +84,33 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
         })
     }
 
-    pub fn with_header<K, V>(self, key: K, value: V) -> CaseBuilder<'b, FE, FM, WithHandler>
+    pub fn with_method<M>(self, method: M) -> Result<CaseBuilder<'b, FE, FM, WithHandler>, Error>
+    where
+        M: TryInto<Method>,
+        M::Error: Into<hyper::http::Error>,
+    {
+        Ok(CaseBuilder {
+            builder: self.builder,
+            with: WithHandler::default().with_method(method)?,
+            count: self.count,
+        })
+    }
+
+    pub fn with_header<K, V>(
+        self,
+        key: K,
+        value: V,
+    ) -> Result<CaseBuilder<'b, FE, FM, WithHandler>, Error>
     where
         K: IntoHeaderName,
-        V: Into<HeaderValue>,
+        V: TryInto<HeaderValue>,
+        V::Error: Into<hyper::http::Error>,
     {
-        CaseBuilder {
+        Ok(CaseBuilder {
             builder: self.builder,
-            with: WithHandler::default().with_header(key, value),
+            with: WithHandler::default().with_header(key, value)?,
             count: self.count,
-        }
+        })
     }
 
     pub fn with_body<B>(self, body: B) -> CaseBuilder<'b, FE, FM, WithHandler>
@@ -110,10 +125,7 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
     }
 
     #[cfg(feature = "json")]
-    pub fn with_json<V>(
-        self,
-        value: V,
-    ) -> Result<CaseBuilder<'b, FE, FM, WithHandler>, serde_json::Error>
+    pub fn with_json<V>(self, value: V) -> Result<CaseBuilder<'b, FE, FM, WithHandler>, Error>
     where
         V: serde::Serialize,
     {
@@ -126,22 +138,32 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
 }
 
 impl<'b, FE, FM> CaseBuilder<'b, FE, FM, WithHandler> {
-    pub fn with_uri<U>(mut self, uri: U) -> Result<Self, BoxError>
+    pub fn with_uri<U>(mut self, uri: U) -> Result<Self, Error>
     where
         U: TryInto<Uri>,
-        U::Error: StdError + Send + Sync + 'static,
+        U::Error: Into<hyper::http::Error>,
     {
         self.with = self.with.with_uri(uri)?;
         Ok(self)
     }
 
-    pub fn with_header<K, V>(mut self, key: K, value: V) -> Self
+    pub fn with_method<M>(mut self, method: M) -> Result<Self, Error>
+    where
+        M: TryInto<Method>,
+        M::Error: Into<hyper::http::Error>,
+    {
+        self.with = self.with.with_method(method)?;
+        Ok(self)
+    }
+
+    pub fn with_header<K, V>(mut self, key: K, value: V) -> Result<Self, Error>
     where
         K: IntoHeaderName,
-        V: Into<HeaderValue>,
+        V: TryInto<HeaderValue>,
+        V::Error: Into<hyper::http::Error>,
     {
-        self.with = self.with.with_header(key, value);
-        self
+        self.with = self.with.with_header(key, value)?;
+        Ok(self)
     }
 
     pub fn with_body<B>(mut self, body: B) -> Self
@@ -153,7 +175,7 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM, WithHandler> {
     }
 
     #[cfg(feature = "json")]
-    pub fn with_json<V>(mut self, value: V) -> Result<Self, serde_json::Error>
+    pub fn with_json<V>(mut self, value: V) -> Result<Self, Error>
     where
         V: serde::Serialize,
     {

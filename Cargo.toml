@@ -1,6 +1,6 @@
 [package]
 name = "mock-http-connector"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = [
     "Nicolas Moutschen <nicolas.moutschen@gmail.com>"
@@ -26,4 +26,6 @@ tracing = "0.1.37"
 
 [dev-dependencies]
 hyper = { version = "0.14.24", features = ["client", "http1", "runtime"] }
+rstest = "0.16.0"
+speculoos = "0.11.0"
 tokio = { version = "1.25.0", features = ["io-util", "macros", "rt-multi-thread"] }

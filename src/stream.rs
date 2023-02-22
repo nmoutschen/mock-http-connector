@@ -87,7 +87,7 @@ where
         let mut req = Request::new(&mut headers);
         self.req_data.extend(buf);
 
-        let status = match dbg!(req.parse(&self.req_data)) {
+        let status = match req.parse(&self.req_data) {
             Ok(status) => status,
             Err(_err) => {
                 self.res_data = into_data(self.connector.error())?;
