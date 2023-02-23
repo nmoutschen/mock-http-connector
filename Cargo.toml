@@ -1,6 +1,6 @@
 [package]
 name = "mock-http-connector"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 authors = [
     "Nicolas Moutschen <nicolas.moutschen@gmail.com>"
@@ -8,6 +8,7 @@ authors = [
 description = "Mock hyper HTTPConnector"
 repository = "https://github.com/nmoutschen/mock-http-connector/"
 license = "MIT"
+readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -18,6 +19,7 @@ json = ["dep:serde_json", "dep:serde"]
 [dependencies]
 httparse = "1.8.0"
 hyper = { version = "0.14.24", features = ["client", "http1"] }
+paste = "1.0.11"
 serde = { version = "1.0.152", optional = true }
 serde_json = { version = "1.0.93", optional = true }
 thiserror = "1.0.38"
@@ -27,6 +29,7 @@ tracing = "0.1.37"
 [dev-dependencies]
 hyper = { version = "0.14.24", features = ["client", "http1", "runtime"] }
 rstest = "0.16.0"
+serde = { version = "1.0.152", features = ["derive"] }
 speculoos = "0.11.0"
 tokio = { version = "1.25.0", features = ["io-util", "macros", "rt-multi-thread"] }
 tokio-test = "0.4.2"

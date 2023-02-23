@@ -137,8 +137,6 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
 
     /// Match requests with the specified [`Uri`]
     ///
-    /// You can combine this with other validators, such as `with_uri`, but not with `with`.
-    ///
     /// ## Example
     ///
     /// ```rust
@@ -153,6 +151,10 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
     /// # Ok::<_, Error>(())
     /// # };
     /// ```
+    ///
+    /// ## Remark
+    ///
+    /// You can combine this with other validators, such as `with_header`, but not with `with`.
     #[must_use = "this does nothing until you call `returning`"]
     pub fn with_uri<U>(self, uri: U) -> Result<CaseBuilder<'b, FE, FM, WithHandler>, Error>
     where
@@ -168,8 +170,6 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
 
     /// Match requests with the specified [`Method`]
     ///
-    /// You can combine this with other validators, such as `with_uri`, but not with `with`.
-    ///
     /// ## Example
     ///
     /// ```rust
@@ -184,6 +184,10 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
     /// # Ok::<_, Error>(())
     /// # };
     /// ```
+    ///
+    /// ## Remark
+    ///
+    /// You can combine this with other validators, such as `with_uri`, but not with `with`.
     #[must_use = "this does nothing until you call `returning`"]
     pub fn with_method<M>(self, method: M) -> Result<CaseBuilder<'b, FE, FM, WithHandler>, Error>
     where
@@ -199,8 +203,6 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
 
     /// Match requests that contains the specific header
     ///
-    /// You can combine this with other validators, such as `with_uri`, but not with `with`.
-    ///
     /// ## Example
     ///
     /// ```rust
@@ -215,6 +217,10 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
     /// # Ok::<_, Error>(())
     /// # };
     /// ```
+    ///
+    /// ## Remark
+    ///
+    /// You can combine this with other validators, such as `with_uri`, but not with `with`.
     #[must_use = "this does nothing until you call `returning`"]
     pub fn with_header<K, V>(
         self,
@@ -235,8 +241,6 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
 
     /// Match requests that contains the provided payload
     ///
-    /// You can combine this with other validators, such as `with_uri`, but not with `with`.
-    ///
     /// ## Example
     ///
     /// ```rust
@@ -248,6 +252,13 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
     ///     .with_body("some body")
     ///     .returning("OK");
     /// ```
+    ///
+    /// ## Remark
+    ///
+    /// You can combine this with other validators, such as `with_uri`, but not with `with`.
+    ///
+    /// A mock case only supports `with_body`, `with_json`, or `with_json_value`, but not multiple
+    /// ones at the same time.
     #[must_use = "this does nothing until you call `returning`"]
     pub fn with_body<B>(self, body: B) -> CaseBuilder<'b, FE, FM, WithHandler>
     where
@@ -260,9 +271,7 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
         }
     }
 
-    /// Match requests that contains the provided JSON payload
-    ///
-    /// You can combine this with other validators, such as `with_uri`, but not with `with`.
+    /// Match requests with a body that exactly matches the provided JSON payload
     ///
     /// ## Example
     ///
@@ -278,6 +287,13 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
     /// # Ok::<_, Error>(())
     /// # };
     /// ```
+    ///
+    /// ## Remark
+    ///
+    /// You can combine this with other validators, such as `with_uri`, but not with `with`.
+    ///
+    /// A mock case only supports `with_body`, `with_json`, or `with_json_value`, but not multiple
+    /// ones at the same time.
     #[cfg(feature = "json")]
     #[must_use = "this does nothing until you call `returning`"]
     pub fn with_json<V>(self, value: V) -> Result<CaseBuilder<'b, FE, FM, WithHandler>, Error>
@@ -287,6 +303,23 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
         Ok(CaseBuilder {
             builder: self.builder,
             with: WithHandler::default().with_json(value)?,
+            count: self.count,
+        })
+    }
+
+    /// Match requests that contains the provided JSON payload, but may contain other properties
+    ///
+    /// You can combine this with other validators, such as `with_uri`, but not with `with`.
+    pub fn with_json_partial<V>(
+        self,
+        value: V,
+    ) -> Result<CaseBuilder<'b, FE, FM, WithHandler>, Error>
+    where
+        V: serde::Serialize,
+    {
+        Ok(CaseBuilder {
+            builder: self.builder,
+            with: WithHandler::default().with_json_partial(value)?,
             count: self.count,
         })
     }
@@ -347,6 +380,17 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM, WithHandler> {
         self.with = self.with.with_json(value)?;
         Ok(self)
     }
+
+    #[doc(hidden)]
+    #[cfg(feature = "json")]
+    #[must_use = "this does nothing until you call `returning`"]
+    pub fn with_json_partial<V>(mut self, value: V) -> Result<Self, Error>
+    where
+        V: serde::Serialize,
+    {
+        self.with = self.with.with_json_partial(value)?;
+        Ok(self)
+    }
 }
 
 impl<'b, FE, FM, W> CaseBuilder<'b, FE, FM, W> {
@@ -365,7 +409,7 @@ impl<'b, FE, FM, W> CaseBuilder<'b, FE, FM, W> {
 
 impl<'b, FE, FM, W> CaseBuilder<'b, FE, FM, W>
 where
-    W: With + Send + Sync + 'static,
+    W: With + 'static,
 {
     /// Mark what will generate the response for a given mock case
     ///
@@ -376,7 +420,7 @@ where
     /// method.
     pub fn returning<R>(self, returning: R)
     where
-        R: Returning + Send + Sync + 'static,
+        R: Returning + 'static,
     {
         let case = Case::new(self.with, returning, self.count);
         self.builder.cases.push(case);

@@ -2,7 +2,12 @@ use crate::{error::BoxError, Error};
 use hyper::{header::IntoHeaderName, http::HeaderValue, HeaderMap, Method, Request, Uri};
 use std::error::Error as StdError;
 
-pub trait With {
+#[cfg(feature = "json")]
+mod json;
+#[cfg(feature = "json")]
+use json::JsonEq;
+
+pub trait With: Send + Sync {
     fn with(&self, req: &Request<String>) -> Result<bool, BoxError>;
 }
 
@@ -17,7 +22,7 @@ impl With for DefaultWith {
 
 impl<F, E> With for F
 where
-    for<'r> F: Fn(&'r Request<String>) -> Result<bool, E>,
+    for<'r> F: Fn(&'r Request<String>) -> Result<bool, E> + Send + Sync,
     E: StdError + Send + Sync + 'static,
 {
     fn with(&self, req: &Request<String>) -> Result<bool, BoxError> {
@@ -88,6 +93,15 @@ impl WithHandler {
         self.body = Some(Body::Json(serde_json::to_value(value)?));
         Ok(self)
     }
+
+    #[cfg(feature = "json")]
+    pub fn with_json_partial<V>(mut self, value: V) -> Result<Self, Error>
+    where
+        V: serde::Serialize,
+    {
+        self.body = Some(Body::JsonPartial(serde_json::to_value(value)?));
+        Ok(self)
+    }
 }
 
 impl With for WithHandler {
@@ -122,6 +136,13 @@ impl With for WithHandler {
                     return Ok(false);
                 }
             }
+            Some(Body::JsonPartial(body)) => {
+                let payload: serde_json::Value = serde_json::from_str(req.body())?;
+
+                if !body.json_eq(&payload) {
+                    return Ok(false);
+                }
+            }
             None => (),
         }
 
@@ -134,6 +155,8 @@ pub enum Body {
     String(String),
     #[cfg(feature = "json")]
     Json(serde_json::Value),
+    #[cfg(feature = "json")]
+    JsonPartial(serde_json::Value),
 }
 
 #[cfg(test)]
@@ -141,6 +164,14 @@ mod tests {
     use super::*;
     use rstest::*;
     use speculoos::prelude::*;
+
+    #[derive(serde::Serialize)]
+    struct SerializeNamed {
+        val: usize,
+    }
+
+    #[derive(serde::Serialize)]
+    struct SerializeTuple(usize);
 
     #[rstest]
     #[case("http://hello.example/")]
@@ -151,7 +182,10 @@ mod tests {
         U::Error: Into<hyper::http::Error>,
     {
         let with = WithHandler::default();
-        assert_that!(with.with_uri(uri)).is_ok();
+        assert_that!(with.with_uri(uri))
+            .is_ok()
+            .map(|w| &w.uri)
+            .is_some();
     }
 
     #[rstest]
@@ -163,7 +197,10 @@ mod tests {
         M::Error: Into<hyper::http::Error>,
     {
         let with = WithHandler::default();
-        assert_that!(with.with_method(method)).is_ok();
+        assert_that!(with.with_method(method))
+            .is_ok()
+            .map(|w| &w.method)
+            .is_some();
     }
 
     #[rstest]
@@ -175,6 +212,41 @@ mod tests {
         V::Error: Into<hyper::http::Error>,
     {
         let with = WithHandler::default();
-        assert_that!(with.with_header(key, value)).is_ok();
+        assert_that!(with.with_header(key, value))
+            .is_ok()
+            .map(|w| &w.headers)
+            .is_some();
+    }
+
+    #[rstest]
+    #[case("TEST")]
+    #[case("TEST".to_string())]
+    fn with_handler_body<B>(#[case] body: B)
+    where
+        B: ToString,
+    {
+        let with = WithHandler::default();
+        assert_that!(with.with_body(body))
+            .map(|w| &w.body)
+            .is_some()
+            .matches(|b| matches!(b, Body::String(..)));
+    }
+
+    #[cfg(feature = "json")]
+    #[rstest]
+    #[case(serde_json::Value::default())]
+    #[case("Hello")]
+    #[case(SerializeNamed { val: 42 })]
+    #[case(SerializeTuple(42))]
+    fn with_handler_json<V>(#[case] value: V)
+    where
+        V: serde::Serialize,
+    {
+        let with = WithHandler::default();
+        assert_that!(with.with_json(value))
+            .is_ok()
+            .map(|w| &w.body)
+            .is_some()
+            .matches(|b| matches!(b, Body::Json(..)));
     }
 }

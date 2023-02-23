@@ -16,6 +16,8 @@ use crate::{
 };
 
 /// Mock connector for [`hyper::Client`]
+///
+/// See the crate documentation for how to configure the connector.
 #[derive(Default)]
 pub struct Connector<FE = DefaultErrorHandler, FM = DefaultMissingHandler> {
     cases: Arc<Mutex<Vec<Case>>>,
