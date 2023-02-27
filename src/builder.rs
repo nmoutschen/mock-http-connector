@@ -89,6 +89,23 @@ impl Default for Builder {
 }
 
 /// Builder for specific mock cases
+///
+/// ## Example
+///
+/// ```rust
+/// # use mock_http_connector::Connector;
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let mut builder = Connector::builder();
+/// let mut case_builder = builder.expect();
+///
+/// case_builder
+///     .with_uri("https://test.example/some/path")?
+///     .times(3)
+///     .returning("Some response");
+/// # Ok(())
+/// # }
+/// ```
+#[must_use = "case builders do nothing until you call the `returning` method"]
 pub struct CaseBuilder<'b, FE, FM, W = DefaultWith> {
     builder: &'b mut Builder<FE, FM>,
     with: W,
@@ -122,7 +139,6 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
     ///     .with(|req: &Request<String>| Ok::<_, Infallible>(req.body().contains("hello")))
     ///     .returning("OK");
     /// ```
-    #[must_use = "this does nothing until you call `returning`"]
     pub fn with<W, E>(self, with: W) -> CaseBuilder<'b, FE, FM, W>
     where
         for<'r> W: Fn(&'r Request<String>) -> Result<bool, E>,
@@ -155,7 +171,6 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
     /// ## Remark
     ///
     /// You can combine this with other validators, such as `with_header`, but not with `with`.
-    #[must_use = "this does nothing until you call `returning`"]
     pub fn with_uri<U>(self, uri: U) -> Result<CaseBuilder<'b, FE, FM, WithHandler>, Error>
     where
         U: TryInto<Uri>,
@@ -188,7 +203,6 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
     /// ## Remark
     ///
     /// You can combine this with other validators, such as `with_uri`, but not with `with`.
-    #[must_use = "this does nothing until you call `returning`"]
     pub fn with_method<M>(self, method: M) -> Result<CaseBuilder<'b, FE, FM, WithHandler>, Error>
     where
         M: TryInto<Method>,
@@ -221,7 +235,6 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
     /// ## Remark
     ///
     /// You can combine this with other validators, such as `with_uri`, but not with `with`.
-    #[must_use = "this does nothing until you call `returning`"]
     pub fn with_header<K, V>(
         self,
         key: K,
@@ -259,7 +272,6 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
     ///
     /// A mock case only supports `with_body`, `with_json`, or `with_json_value`, but not multiple
     /// ones at the same time.
-    #[must_use = "this does nothing until you call `returning`"]
     pub fn with_body<B>(self, body: B) -> CaseBuilder<'b, FE, FM, WithHandler>
     where
         B: ToString,
@@ -295,7 +307,6 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
     /// A mock case only supports `with_body`, `with_json`, or `with_json_value`, but not multiple
     /// ones at the same time.
     #[cfg(feature = "json")]
-    #[must_use = "this does nothing until you call `returning`"]
     pub fn with_json<V>(self, value: V) -> Result<CaseBuilder<'b, FE, FM, WithHandler>, Error>
     where
         V: serde::Serialize,
@@ -327,7 +338,6 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
 
 impl<'b, FE, FM> CaseBuilder<'b, FE, FM, WithHandler> {
     #[doc(hidden)]
-    #[must_use = "this does nothing until you call `returning`"]
     pub fn with_uri<U>(mut self, uri: U) -> Result<Self, Error>
     where
         U: TryInto<Uri>,
@@ -338,7 +348,6 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM, WithHandler> {
     }
 
     #[doc(hidden)]
-    #[must_use = "this does nothing until you call `returning`"]
     pub fn with_method<M>(mut self, method: M) -> Result<Self, Error>
     where
         M: TryInto<Method>,
@@ -349,7 +358,6 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM, WithHandler> {
     }
 
     #[doc(hidden)]
-    #[must_use = "this does nothing until you call `returning`"]
     pub fn with_header<K, V>(mut self, key: K, value: V) -> Result<Self, Error>
     where
         K: IntoHeaderName,
@@ -361,7 +369,6 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM, WithHandler> {
     }
 
     #[doc(hidden)]
-    #[must_use = "this does nothing until you call `returning`"]
     pub fn with_body<B>(mut self, body: B) -> Self
     where
         B: ToString,
@@ -372,7 +379,6 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM, WithHandler> {
 
     #[doc(hidden)]
     #[cfg(feature = "json")]
-    #[must_use = "this does nothing until you call `returning`"]
     pub fn with_json<V>(mut self, value: V) -> Result<Self, Error>
     where
         V: serde::Serialize,
@@ -383,7 +389,6 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM, WithHandler> {
 
     #[doc(hidden)]
     #[cfg(feature = "json")]
-    #[must_use = "this does nothing until you call `returning`"]
     pub fn with_json_partial<V>(mut self, value: V) -> Result<Self, Error>
     where
         V: serde::Serialize,
@@ -398,7 +403,6 @@ impl<'b, FE, FM, W> CaseBuilder<'b, FE, FM, W> {
     ///
     /// Nothing enforces how many times a mock case is called, but you can use the `checkpoint`
     /// method on the [`Connector`] to ensure all methods were called the right amount of times.
-    #[must_use = "this does nothing until you call `returning`"]
     pub fn times(self, count: usize) -> Self {
         Self {
             count: Some(count),

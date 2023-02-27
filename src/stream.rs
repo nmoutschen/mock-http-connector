@@ -1,8 +1,9 @@
 use std::{
     cmp::min,
+    future::Future,
     io,
     pin::Pin,
-    task::{Context, Poll, Waker},
+    task::{ready, Context, Poll, Waker},
 };
 
 use httparse::{Request, Status};
@@ -12,11 +13,10 @@ use hyper::{
 };
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-use crate::{handler::DefaultHandler, Connector};
+use crate::{handler::DefaultHandler, response::ResponseFuture, Connector};
 
 pub struct MockStream<FE, FM> {
-    res_data: Vec<u8>,
-    res_pos: usize,
+    res: ResponseState,
     req_data: Vec<u8>,
     waker: Option<Waker>,
 
@@ -28,8 +28,7 @@ pub struct MockStream<FE, FM> {
 impl<FE, FM> MockStream<FE, FM> {
     pub(crate) fn new(connector: Connector<FE, FM>, uri: Uri) -> Self {
         Self {
-            res_data: Vec::new(),
-            res_pos: 0,
+            res: ResponseState::New,
             req_data: Vec::new(),
             waker: None,
             uri,
@@ -44,20 +43,33 @@ impl<FE, FM> Connection for MockStream<FE, FM> {
     }
 }
 
-impl<FE, FM> AsyncRead for MockStream<FE, FM> {
+impl<FE, FM> AsyncRead for MockStream<FE, FM>
+where
+    FE: DefaultHandler,
+    FM: DefaultHandler,
+{
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        if self.res_data.is_empty() {
-            self.waker = Some(cx.waker().clone());
-            return Poll::Pending;
-        }
+        let (data, mut pos) = match &mut self.res {
+            ResponseState::New => {
+                self.waker = Some(cx.waker().clone());
+                return Poll::Pending;
+            }
+            ResponseState::Fut(fut) => {
+                let res = ready!(Pin::new(fut).poll(cx)).unwrap_or_else(|_| self.connector.error());
+                (into_data(res)?, 0)
+            }
+            ResponseState::Data(data, pos) => (data.clone(), *pos),
+        };
 
-        let size = min(buf.remaining(), self.res_data.len() - self.res_pos);
-        buf.put_slice(&self.res_data[self.res_pos..self.res_pos + size]);
-        self.res_pos += size;
+        let size = min(buf.remaining(), data.len() - pos);
+        buf.put_slice(&data[pos..pos + size]);
+        pos += size;
+
+        self.res = ResponseState::Data(data, pos);
 
         self.waker = Some(cx.waker().clone());
 
@@ -90,7 +102,7 @@ where
         let status = match req.parse(&self.req_data) {
             Ok(status) => status,
             Err(_err) => {
-                self.res_data = into_data(self.connector.error())?;
+                self.res = ResponseState::Data(into_data(self.connector.error())?, 0);
                 if let Some(w) = self.waker.take() {
                     w.wake()
                 }
@@ -103,10 +115,10 @@ where
             Status::Partial => &[],
         };
 
-        self.res_data = match self.connector.matches(req, body, &self.uri) {
-            Ok(Some(res)) => into_data(res)?,
-            Ok(None) => into_data(self.connector.missing())?,
-            Err(_err) => into_data(self.connector.error())?,
+        self.res = match self.connector.matches(req, body, &self.uri) {
+            Ok(Some(res)) => ResponseState::Fut(res),
+            Ok(None) => ResponseState::Data(into_data(self.connector.missing())?, 0),
+            Err(_err) => ResponseState::Data(into_data(self.connector.error())?, 0),
         };
 
         if let Some(w) = self.waker.take() {
@@ -115,6 +127,14 @@ where
 
         Poll::Ready(Ok(buf.len()))
     }
+}
+
+#[derive(Default)]
+enum ResponseState {
+    #[default]
+    New,
+    Fut(ResponseFuture),
+    Data(Vec<u8>, usize),
 }
 
 fn into_data(res: Response<String>) -> Result<Vec<u8>, io::Error> {
@@ -137,7 +157,6 @@ fn into_data(res: Response<String>) -> Result<Vec<u8>, io::Error> {
 
     data.push_str("\r\n");
     data.push_str(res.body());
-    data.push_str("\r\n\r\n");
 
     Ok(data.into_bytes())
 }

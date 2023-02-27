@@ -64,7 +64,7 @@ mod tests {
     fn case_new() {
         let _case = Case::new(
             |_req: &Request<String>| Ok::<_, Infallible>(true),
-            |_| Response::builder().status(StatusCode::OK).body(""),
+            |_| async { Response::builder().status(StatusCode::OK).body("") },
             None,
         );
     }

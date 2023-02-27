@@ -11,6 +11,7 @@ use hyper::{service::Service, Request, Response, Uri};
 use crate::{
     error::BoxError,
     handler::{DefaultErrorHandler, DefaultHandler, DefaultMissingHandler},
+    response::ResponseFuture,
     stream::MockStream,
     Builder, Case, Error,
 };
@@ -57,7 +58,7 @@ impl<FE, FM> Connector<FE, FM> {
         req: httparse::Request,
         body: &[u8],
         uri: &Uri,
-    ) -> Result<Option<Response<String>>, Error> {
+    ) -> Result<Option<ResponseFuture>, Error> {
         let mut cases = self.cases.lock()?;
 
         let req = into_request(req, body, uri)?;
@@ -66,7 +67,7 @@ impl<FE, FM> Connector<FE, FM> {
             let res = case.with.with(&req)?;
             if res {
                 case.seen += 1;
-                return Ok(Some(case.returning.returning(req)?));
+                return Ok(Some(case.returning.returning(req)));
             }
         }
 
