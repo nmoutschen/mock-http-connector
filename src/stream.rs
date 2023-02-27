@@ -119,7 +119,12 @@ where
 
 fn into_data(res: Response<String>) -> Result<Vec<u8>, io::Error> {
     let mut data = String::new();
-    data.push_str("HTTP/1.1 200 OK\r\n");
+    let status = res.status();
+    data.push_str(&format!(
+        "HTTP/1.1 {} {}\r\n",
+        status.as_u16(),
+        status.as_str()
+    ));
 
     for (name, value) in res.headers() {
         data.push_str(&format!(
