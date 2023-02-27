@@ -92,6 +92,10 @@ returning!(
 returning!(u16, |_| Ok::<_, Infallible>(String::new()), |v: &u16| {
     StatusCode::try_from(*v)
 });
+#[cfg(feature = "json")]
+returning!(serde_json::Value, |v: &serde_json::Value| {
+    Ok::<_, Infallible>(v.to_string())
+});
 
 impl<S, B> Returning for (S, B)
 where
