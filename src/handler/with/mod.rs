@@ -110,12 +110,17 @@ impl With for WithHandler {
             return Ok(false);
         }
 
+        if self.method.is_some() && Some(req.method()) != self.method.as_ref() {
+            return Ok(false);
+        }
+
         if let Some(headers) = &self.headers {
             for (key, value) in headers {
-                if req
+                // If the value is not equal or not present
+                if !req
                     .headers()
                     .get(key)
-                    .map(|rv| value != rv)
+                    .map(|rv| value == rv)
                     .unwrap_or(false)
                 {
                     return Ok(false);
