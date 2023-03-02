@@ -6,12 +6,14 @@ mod case;
 mod connector;
 mod error;
 mod handler;
+mod level;
 mod response;
 mod stream;
 
-pub use builder::{Builder, CaseBuilder};
+pub use builder::CaseBuilder;
 use case::Case;
 pub use connector::Connector;
 pub use error::Error;
 pub use handler::Returning;
+pub use level::Level;
 pub use response::{IntoResponse, IntoResponseFuture};

@@ -1,6 +1,7 @@
 use std::{error::Error as StdError, sync::PoisonError};
 
 use hyper::Request;
+use miette::{Diagnostic, NamedSource, SourceOffset, SourceSpan};
 
 use crate::case::Checkpoint;
 
@@ -39,11 +40,55 @@ pub enum Error {
     /// Runtime errors
     #[error("transparent")]
     Runtime(#[from] BoxError),
+
+    /// [`With`] handler errors
+    #[error("with handler error: {0}")]
+    With(#[from] WithError),
 }
 
 impl<T> From<PoisonError<T>> for Error {
     fn from(value: PoisonError<T>) -> Self {
         Self::Lock(value.to_string())
+    }
+}
+
+#[derive(Debug, thiserror::Error, Diagnostic)]
+pub enum WithError {
+    #[error("invalid body: {0}")]
+    Body(BodyError),
+
+    #[error("unknown error: {0}")]
+    Unknown(BoxError),
+}
+
+impl WithError {
+    pub fn body<E>(err: E) -> Self
+    where
+        E: Into<BodyError>,
+    {
+        Self::Body(err.into())
+    }
+}
+
+#[derive(Debug, thiserror::Error, Diagnostic)]
+#[error("invalid body: {err}")]
+pub struct BodyError {
+    #[source_code]
+    src: NamedSource,
+    #[label]
+    body: SourceSpan,
+    err: BoxError,
+}
+
+#[cfg(feature = "json")]
+impl<'b> From<(&'b str, serde_json::Error)> for BodyError {
+    fn from((body, err): (&'b str, serde_json::Error)) -> Self {
+        let body = body.to_string();
+        BodyError {
+            src: NamedSource::new("body", body.clone()),
+            body: SourceOffset::from_location(body, err.line(), err.column()).into(),
+            err: err.into(),
+        }
     }
 }
 

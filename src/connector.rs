@@ -8,39 +8,43 @@ use std::{
 
 use hyper::{service::Service, Request, Uri};
 
-use crate::{error::BoxError, response::ResponseFuture, stream::MockStream, Builder, Case, Error};
+use crate::{
+    error::BoxError, response::ResponseFuture, stream::MockStream, Case, CaseBuilder, Error,
+};
 
 /// Mock connector for [`hyper::Client`]
 ///
 /// See the crate documentation for how to configure the connector.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Connector {
-    cases: Arc<Mutex<Vec<Case>>>,
+    inner: InnerConnector,
 }
 
-impl Clone for Connector {
-    fn clone(&self) -> Self {
-        Self {
-            cases: self.cases.clone(),
-        }
-    }
+#[derive(Default, Clone)]
+pub(crate) struct InnerConnector {
+    pub cases: Arc<Mutex<Vec<Case>>>,
 }
 
 impl Connector {
-    /// Create a new [`Builder`] to specify expected [`Request`]s and their corresponding
-    /// [`Response`]s
-    pub fn builder() -> Builder {
-        Builder::default()
+    /// Create a new [`Connector`] without any cases
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create a new expected case
+    pub fn expect(&self) -> CaseBuilder<'_> {
+        CaseBuilder::new(&self.inner)
+    }
+
+    /// Check if all the mock cases were called the right amount of time
+    ///
+    /// If not, this will return an error with all the mock cases that failed.
+    pub fn checkpoint(&self) -> Result<(), Error> {
+        self.inner.checkpoint()
     }
 }
 
-impl Connector {
-    pub(crate) fn new(cases: Vec<Case>) -> Self {
-        Self {
-            cases: Arc::new(Mutex::new(cases)),
-        }
-    }
-
+impl InnerConnector {
     pub(crate) fn matches(
         &self,
         req: httparse::Request,
@@ -63,9 +67,6 @@ impl Connector {
         Err(Error::NotFound(req))
     }
 
-    /// Check if all the mock cases were called the right amount of time
-    ///
-    /// If not, this will return an error with all the mock cases that failed.
     pub fn checkpoint(&self) -> Result<(), Error> {
         let cases = self.cases.lock()?;
         let checkpoints = cases
@@ -91,7 +92,7 @@ impl Service<Uri> for Connector {
     }
 
     fn call(&mut self, req: Uri) -> Self::Future {
-        ready(Ok(MockStream::new(self.clone(), req)))
+        ready(Ok(MockStream::new(self.inner.clone(), req)))
     }
 }
 

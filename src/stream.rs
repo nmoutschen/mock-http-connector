@@ -13,7 +13,7 @@ use hyper::{
 };
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-use crate::{response::ResponseFuture, Connector, Error};
+use crate::{connector::InnerConnector, response::ResponseFuture, Error};
 
 pub struct MockStream {
     res: ResponseState,
@@ -22,11 +22,11 @@ pub struct MockStream {
 
     uri: Uri,
 
-    connector: Connector,
+    connector: InnerConnector,
 }
 
 impl MockStream {
-    pub(crate) fn new(connector: Connector, uri: Uri) -> Self {
+    pub(crate) fn new(connector: InnerConnector, uri: Uri) -> Self {
         Self {
             res: ResponseState::New,
             req_data: Vec::new(),

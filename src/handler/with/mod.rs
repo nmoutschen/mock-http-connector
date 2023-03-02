@@ -1,6 +1,6 @@
-use crate::{error::BoxError, Error};
+use crate::{error::WithError, Error};
 use hyper::{header::IntoHeaderName, http::HeaderValue, HeaderMap, Method, Request, Uri};
-use std::error::Error as StdError;
+use std::{error::Error as StdError, ops::Deref};
 
 #[cfg(feature = "json")]
 mod json;
@@ -8,14 +8,14 @@ mod json;
 use json::JsonEq;
 
 pub trait With: Send + Sync {
-    fn with(&self, req: &Request<String>) -> Result<bool, BoxError>;
+    fn with(&self, req: &Request<String>) -> Result<bool, WithError>;
 }
 
 #[derive(Debug)]
 pub struct DefaultWith;
 
 impl With for DefaultWith {
-    fn with(&self, _req: &Request<String>) -> Result<bool, BoxError> {
+    fn with(&self, _req: &Request<String>) -> Result<bool, WithError> {
         Ok(true)
     }
 }
@@ -25,8 +25,8 @@ where
     for<'r> F: Fn(&'r Request<String>) -> Result<bool, E> + Send + Sync,
     E: StdError + Send + Sync + 'static,
 {
-    fn with(&self, req: &Request<String>) -> Result<bool, BoxError> {
-        (self)(req).map_err(Into::into)
+    fn with(&self, req: &Request<String>) -> Result<bool, WithError> {
+        (self)(req).map_err(|err| WithError::Unknown(err.into()))
     }
 }
 
@@ -105,7 +105,7 @@ impl WithHandler {
 }
 
 impl With for WithHandler {
-    fn with(&self, req: &Request<String>) -> Result<bool, BoxError> {
+    fn with(&self, req: &Request<String>) -> Result<bool, WithError> {
         if self.uri.is_some() && Some(req.uri()) != self.uri.as_ref() {
             return Ok(false);
         }
@@ -135,14 +135,16 @@ impl With for WithHandler {
                 }
             }
             Some(Body::Json(body)) => {
-                let payload: serde_json::Value = serde_json::from_str(req.body())?;
+                let payload: serde_json::Value = serde_json::from_str(req.body())
+                    .map_err(|err| WithError::body((req.body().deref(), err)))?;
 
                 if body != &payload {
                     return Ok(false);
                 }
             }
             Some(Body::JsonPartial(body)) => {
-                let payload: serde_json::Value = serde_json::from_str(req.body())?;
+                let payload: serde_json::Value = serde_json::from_str(req.body())
+                    .map_err(|err| WithError::body((req.body().deref(), err)))?;
 
                 if !body.json_eq(&payload) {
                     return Ok(false);
