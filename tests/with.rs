@@ -42,8 +42,8 @@ async fn test_method(#[case] method: Method) -> Result<(), Box<dyn StdError + Se
         )
         .await;
 
-    // THEN it returns another payload
-    assert_that!(res).is_ok().matches(|res| res.status() != 202);
+    // THEN it returns an error
+    assert_that!(res).is_err();
 
     Ok(())
 }
@@ -89,8 +89,8 @@ async fn test_header(
         )
         .await;
 
-    // THEN it returns another payload
-    assert_that!(res).is_ok().matches(|res| res.status() != 202);
+    // THEN it returns an error
+    assert_that!(res).is_err();
 
     // WHEN making a request with a different value for the header
     let res = client
@@ -102,8 +102,8 @@ async fn test_header(
         )
         .await;
 
-    // THEN it returns another payload
-    assert_that!(res).is_ok().matches(|res| res.status() != 202);
+    // THEN it returns an error
+    assert_that!(res).is_err();
 
     Ok(())
 }
@@ -158,8 +158,8 @@ async fn test_headers(
         )
         .await;
 
-    // THEN it returns another payload
-    assert_that!(res).is_ok().matches(|res| res.status() != 202);
+    // THEN it returns an error
+    assert_that!(res).is_err();
 
     Ok(())
 }
@@ -197,8 +197,8 @@ async fn test_uri(#[case] uri: &'static str) -> Result<(), Box<dyn StdError + Se
         )
         .await;
 
-    // THEN it returns another payload
-    assert_that!(res).is_ok().matches(|res| res.status() != 202);
+    // THEN it returns an error
+    assert_that!(res).is_err();
 
     Ok(())
 }

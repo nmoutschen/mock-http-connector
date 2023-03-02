@@ -25,11 +25,10 @@ let client = hyper::Client::builder().build::<_, Body>(connector.clone());
 let _res = client
 .request(
     Request::builder()
-        .uri("http://example.com/test")
+        .uri("https://example.com/test")
         .body("".to_string().into())?,
 )
-.await
-.unwrap();
+.await?;
 
 // Check if all expectations were called the right number of times
 connector.checkpoint()?;

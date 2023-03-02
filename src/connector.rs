@@ -6,32 +6,22 @@ use std::{
     task::{Context, Poll},
 };
 
-use hyper::{service::Service, Request, Response, Uri};
+use hyper::{service::Service, Request, Uri};
 
-use crate::{
-    error::BoxError,
-    handler::{DefaultErrorHandler, DefaultHandler, DefaultMissingHandler},
-    response::ResponseFuture,
-    stream::MockStream,
-    Builder, Case, Error,
-};
+use crate::{error::BoxError, response::ResponseFuture, stream::MockStream, Builder, Case, Error};
 
 /// Mock connector for [`hyper::Client`]
 ///
 /// See the crate documentation for how to configure the connector.
 #[derive(Default)]
-pub struct Connector<FE = DefaultErrorHandler, FM = DefaultMissingHandler> {
+pub struct Connector {
     cases: Arc<Mutex<Vec<Case>>>,
-    error_handler: Arc<FE>,
-    missing_handler: Arc<FM>,
 }
 
-impl<FE, FM> Clone for Connector<FE, FM> {
+impl Clone for Connector {
     fn clone(&self) -> Self {
         Self {
             cases: self.cases.clone(),
-            error_handler: self.error_handler.clone(),
-            missing_handler: self.missing_handler.clone(),
         }
     }
 }
@@ -44,12 +34,10 @@ impl Connector {
     }
 }
 
-impl<FE, FM> Connector<FE, FM> {
-    pub(crate) fn new(cases: Vec<Case>, error_handler: FE, missing_handler: FM) -> Self {
+impl Connector {
+    pub(crate) fn new(cases: Vec<Case>) -> Self {
         Self {
             cases: Arc::new(Mutex::new(cases)),
-            error_handler: Arc::new(error_handler),
-            missing_handler: Arc::new(missing_handler),
         }
     }
 
@@ -58,7 +46,7 @@ impl<FE, FM> Connector<FE, FM> {
         req: httparse::Request,
         body: &[u8],
         uri: &Uri,
-    ) -> Result<Option<ResponseFuture>, Error> {
+    ) -> Result<ResponseFuture, Error> {
         let mut cases = self.cases.lock()?;
 
         let req = into_request(req, body, uri)?;
@@ -67,13 +55,12 @@ impl<FE, FM> Connector<FE, FM> {
             let res = case.with.with(&req)?;
             if res {
                 case.seen += 1;
-                return Ok(Some(case.returning.returning(req)));
+                return Ok(case.returning.returning(req));
             }
         }
 
         // Couldn't find a match, log the error
-        eprintln!("no match found for request {req:?}");
-        Ok(None)
+        Err(Error::NotFound(req))
     }
 
     /// Check if all the mock cases were called the right amount of time
@@ -94,26 +81,8 @@ impl<FE, FM> Connector<FE, FM> {
     }
 }
 
-impl<FE, FM> Connector<FE, FM>
-where
-    FE: DefaultHandler,
-{
-    pub(crate) fn error(&self) -> Response<String> {
-        self.error_handler.handle()
-    }
-}
-
-impl<FE, FM> Connector<FE, FM>
-where
-    FM: DefaultHandler,
-{
-    pub(crate) fn missing(&self) -> Response<String> {
-        self.missing_handler.handle()
-    }
-}
-
-impl<FE, FM> Service<Uri> for Connector<FE, FM> {
-    type Response = MockStream<FE, FM>;
+impl Service<Uri> for Connector {
+    type Response = MockStream;
     type Error = io::Error;
     type Future = Ready<Result<Self::Response, Self::Error>>;
 
