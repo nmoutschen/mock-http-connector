@@ -14,4 +14,4 @@ use case::Case;
 pub use connector::Connector;
 pub use error::Error;
 pub use handler::Returning;
-pub use response::{IntoResponse, IntoResponseFuture, IntoResultResponse};
+pub use response::{IntoResponse, IntoResponseFuture};
