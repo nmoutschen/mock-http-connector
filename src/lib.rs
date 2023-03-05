@@ -14,6 +14,6 @@ pub use builder::CaseBuilder;
 use case::Case;
 pub use connector::Connector;
 pub use error::Error;
-pub use handler::Returning;
+pub use handler::{Reason, Returning, WithResult};
 pub use level::Level;
 pub use response::{IntoResponse, IntoResponseFuture};

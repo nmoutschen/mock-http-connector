@@ -19,13 +19,11 @@ json = ["dep:serde_json", "dep:serde"]
 [dependencies]
 httparse = "1.8.0"
 hyper = { version = "0.14.24", features = ["client", "http1"] }
-miette = "5.5.0"
 paste = "1.0.11"
 serde = { version = "1.0.152", optional = true }
 serde_json = { version = "1.0.93", optional = true }
 thiserror = "1.0.38"
 tokio = { version = "1.25.0", features = ["io-util"] }
-tracing = "0.1.37"
 
 [dev-dependencies]
 hyper = { version = "0.14.24", features = ["client", "http1", "runtime"] }

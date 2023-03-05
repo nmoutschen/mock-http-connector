@@ -1,32 +1,69 @@
-use crate::{error::WithError, Error};
+use crate::{error::BoxError, Error};
 use hyper::{header::IntoHeaderName, http::HeaderValue, HeaderMap, Method, Request, Uri};
-use std::{error::Error as StdError, ops::Deref};
+use std::error::Error as StdError;
 
 #[cfg(feature = "json")]
 mod json;
 #[cfg(feature = "json")]
 use json::JsonEq;
 
+mod reason;
+pub use reason::Reason;
+
 pub trait With: Send + Sync {
-    fn with(&self, req: &Request<String>) -> Result<bool, WithError>;
+    fn with<'w>(&'w self, req: &Request<String>) -> Result<WithResult<'w>, BoxError>;
+}
+
+/// Result of the [`With`] method
+///
+/// This returns whether or not the underlying case matches the incoming request
+/// or not. If it doesn't match, it can contain a series of [`Reason`]s why.
+#[derive(Debug, Clone)]
+pub enum WithResult<'w> {
+    /// The [`Request`] matches the requirements of this implementor
+    Match,
+    /// The [`Request`] doesn't match the requirements of this implementor
+    ///
+    /// It may contain a series of [`Reason`]s for troubleshooting
+    Mismatch(Vec<Reason<'w>>),
+}
+
+impl<'w> From<Vec<Reason<'w>>> for WithResult<'w> {
+    fn from(value: Vec<Reason<'w>>) -> Self {
+        if value.is_empty() {
+            Self::Match
+        } else {
+            Self::Mismatch(value)
+        }
+    }
+}
+
+impl<'w> From<bool> for WithResult<'w> {
+    fn from(value: bool) -> Self {
+        match value {
+            true => Self::Match,
+            false => Self::Mismatch(Vec::default()),
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct DefaultWith;
 
 impl With for DefaultWith {
-    fn with(&self, _req: &Request<String>) -> Result<bool, WithError> {
-        Ok(true)
+    fn with<'w>(&'w self, _req: &Request<String>) -> Result<WithResult<'w>, BoxError> {
+        Ok(WithResult::Match)
     }
 }
 
-impl<F, E> With for F
+impl<F, E, R> With for F
 where
-    for<'r> F: Fn(&'r Request<String>) -> Result<bool, E> + Send + Sync,
+    for<'r> F: Fn(&'r Request<String>) -> Result<R, E> + Send + Sync,
+    R: Into<WithResult<'static>> + Send + Sync + 'static,
     E: StdError + Send + Sync + 'static,
 {
-    fn with(&self, req: &Request<String>) -> Result<bool, WithError> {
-        (self)(req).map_err(|err| WithError::Unknown(err.into()))
+    fn with<'s>(&'s self, req: &Request<String>) -> Result<WithResult<'s>, BoxError> {
+        (self)(req).map(Into::into).map_err(Into::into)
     }
 }
 
@@ -105,13 +142,19 @@ impl WithHandler {
 }
 
 impl With for WithHandler {
-    fn with(&self, req: &Request<String>) -> Result<bool, WithError> {
-        if self.uri.is_some() && Some(req.uri()) != self.uri.as_ref() {
-            return Ok(false);
+    fn with(&self, req: &Request<String>) -> Result<WithResult, BoxError> {
+        let mut reasons = Vec::new();
+
+        if let Some(uri) = &self.uri {
+            if uri != req.uri() {
+                reasons.push(Reason::uri(uri, None));
+            }
         }
 
-        if self.method.is_some() && Some(req.method()) != self.method.as_ref() {
-            return Ok(false);
+        if let Some(method) = &self.method {
+            if method != req.method() {
+                reasons.push(Reason::method(method));
+            }
         }
 
         if let Some(headers) = &self.headers {
@@ -123,7 +166,7 @@ impl With for WithHandler {
                     .map(|rv| value == rv)
                     .unwrap_or(false)
                 {
-                    return Ok(false);
+                    reasons.push(Reason::header(key, value, None));
                 }
             }
         }
@@ -131,29 +174,27 @@ impl With for WithHandler {
         match &self.body {
             Some(Body::String(body)) => {
                 if body != req.body() {
-                    return Ok(false);
+                    reasons.push(Reason::body(None));
                 }
             }
             Some(Body::Json(body)) => {
-                let payload: serde_json::Value = serde_json::from_str(req.body())
-                    .map_err(|err| WithError::body((req.body().deref(), err)))?;
+                let payload: serde_json::Value = serde_json::from_str(req.body())?;
 
                 if body != &payload {
-                    return Ok(false);
+                    reasons.push(Reason::body(None));
                 }
             }
             Some(Body::JsonPartial(body)) => {
-                let payload: serde_json::Value = serde_json::from_str(req.body())
-                    .map_err(|err| WithError::body((req.body().deref(), err)))?;
+                let payload: serde_json::Value = serde_json::from_str(req.body())?;
 
                 if !body.json_eq(&payload) {
-                    return Ok(false);
+                    reasons.push(Reason::body(None));
                 }
             }
             None => (),
         }
 
-        Ok(true)
+        Ok(reasons.into())
     }
 }
 

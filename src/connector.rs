@@ -9,7 +9,8 @@ use std::{
 use hyper::{service::Service, Request, Uri};
 
 use crate::{
-    error::BoxError, response::ResponseFuture, stream::MockStream, Case, CaseBuilder, Error,
+    error::BoxError, handler::WithResult, response::ResponseFuture, stream::MockStream, Case,
+    CaseBuilder, Error, Level,
 };
 
 /// Mock connector for [`hyper::Client`]
@@ -20,15 +21,15 @@ pub struct Connector {
     inner: InnerConnector,
 }
 
-#[derive(Default, Clone)]
-pub(crate) struct InnerConnector {
-    pub cases: Arc<Mutex<Vec<Case>>>,
-}
-
 impl Connector {
     /// Create a new [`Connector`] without any cases
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Set the diagnostics [`Level`] for the connector
+    pub fn level(&mut self, level: Level) {
+        self.inner.level = level;
     }
 
     /// Create a new expected case
@@ -44,29 +45,13 @@ impl Connector {
     }
 }
 
+#[derive(Default, Clone)]
+pub(crate) struct InnerConnector {
+    pub level: Level,
+    pub cases: Arc<Mutex<Vec<Case>>>,
+}
+
 impl InnerConnector {
-    pub(crate) fn matches(
-        &self,
-        req: httparse::Request,
-        body: &[u8],
-        uri: &Uri,
-    ) -> Result<ResponseFuture, Error> {
-        let mut cases = self.cases.lock()?;
-
-        let req = into_request(req, body, uri)?;
-
-        for case in cases.iter_mut() {
-            let res = case.with.with(&req)?;
-            if res {
-                case.seen += 1;
-                return Ok(case.returning.returning(req));
-            }
-        }
-
-        // Couldn't find a match, log the error
-        Err(Error::NotFound(req))
-    }
-
     pub fn checkpoint(&self) -> Result<(), Error> {
         let cases = self.cases.lock()?;
         let checkpoints = cases
@@ -79,6 +64,41 @@ impl InnerConnector {
         } else {
             Err(Error::Checkpoint(checkpoints))
         }
+    }
+
+    pub(crate) fn matches(
+        &self,
+        req: httparse::Request,
+        body: &[u8],
+        uri: &Uri,
+    ) -> Result<ResponseFuture, Error> {
+        let mut cases = self.cases.lock()?;
+
+        let req = into_request(req, body, uri)?;
+
+        let mut reasons = Vec::new();
+
+        for case in cases.iter_mut() {
+            let res = case.with.with(&req)?;
+            match res {
+                WithResult::Match => {
+                    case.seen += 1;
+                    return Ok(case.returning.returning(req));
+                }
+                WithResult::Mismatch(new_reasons) => {
+                    reasons.extend(new_reasons);
+                }
+            }
+        }
+
+        // Couldn't find a match, log the error
+        if self.level >= Level::Missing {
+            for reason in reasons {
+                // TODO: pretty reports
+                println!("{:?}", reason);
+            }
+        }
+        Err(Error::NotFound(req))
     }
 }
 
