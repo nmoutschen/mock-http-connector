@@ -6,79 +6,52 @@ use std::{
     task::{Context, Poll},
 };
 
-use hyper::{service::Service, Request, Response, Uri};
+use hyper::{service::Service, Request, Uri};
 
 use crate::{
-    error::BoxError,
-    handler::{DefaultErrorHandler, DefaultHandler, DefaultMissingHandler},
-    response::ResponseFuture,
-    stream::MockStream,
-    Builder, Case, Error,
+    error::BoxError, handler::WithResult, response::ResponseFuture, stream::MockStream, Case,
+    CaseBuilder, Error, Level,
 };
 
 /// Mock connector for [`hyper::Client`]
 ///
 /// See the crate documentation for how to configure the connector.
-#[derive(Default)]
-pub struct Connector<FE = DefaultErrorHandler, FM = DefaultMissingHandler> {
-    cases: Arc<Mutex<Vec<Case>>>,
-    error_handler: Arc<FE>,
-    missing_handler: Arc<FM>,
-}
-
-impl<FE, FM> Clone for Connector<FE, FM> {
-    fn clone(&self) -> Self {
-        Self {
-            cases: self.cases.clone(),
-            error_handler: self.error_handler.clone(),
-            missing_handler: self.missing_handler.clone(),
-        }
-    }
+#[derive(Default, Clone)]
+pub struct Connector {
+    inner: InnerConnector,
 }
 
 impl Connector {
-    /// Create a new [`Builder`] to specify expected [`Request`]s and their corresponding
-    /// [`Response`]s
-    pub fn builder() -> Builder {
-        Builder::default()
-    }
-}
-
-impl<FE, FM> Connector<FE, FM> {
-    pub(crate) fn new(cases: Vec<Case>, error_handler: FE, missing_handler: FM) -> Self {
-        Self {
-            cases: Arc::new(Mutex::new(cases)),
-            error_handler: Arc::new(error_handler),
-            missing_handler: Arc::new(missing_handler),
-        }
+    /// Create a new [`Connector`] without any cases
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    pub(crate) fn matches(
-        &self,
-        req: httparse::Request,
-        body: &[u8],
-        uri: &Uri,
-    ) -> Result<Option<ResponseFuture>, Error> {
-        let mut cases = self.cases.lock()?;
+    /// Set the diagnostics [`Level`] for the connector
+    pub fn level(&mut self, level: Level) {
+        self.inner.level = level;
+    }
 
-        let req = into_request(req, body, uri)?;
-
-        for case in cases.iter_mut() {
-            let res = case.with.with(&req)?;
-            if res {
-                case.seen += 1;
-                return Ok(Some(case.returning.returning(req)));
-            }
-        }
-
-        // Couldn't find a match, log the error
-        eprintln!("no match found for request {req:?}");
-        Ok(None)
+    /// Create a new expected case
+    pub fn expect(&self) -> CaseBuilder<'_> {
+        CaseBuilder::new(&self.inner)
     }
 
     /// Check if all the mock cases were called the right amount of time
     ///
     /// If not, this will return an error with all the mock cases that failed.
+    pub fn checkpoint(&self) -> Result<(), Error> {
+        self.inner.checkpoint()
+    }
+}
+
+#[derive(Default, Clone)]
+pub(crate) struct InnerConnector {
+    pub level: Level,
+    pub cases: Arc<Mutex<Vec<Case>>>,
+}
+
+impl InnerConnector {
     pub fn checkpoint(&self) -> Result<(), Error> {
         let cases = self.cases.lock()?;
         let checkpoints = cases
@@ -92,28 +65,45 @@ impl<FE, FM> Connector<FE, FM> {
             Err(Error::Checkpoint(checkpoints))
         }
     }
-}
 
-impl<FE, FM> Connector<FE, FM>
-where
-    FE: DefaultHandler,
-{
-    pub(crate) fn error(&self) -> Response<String> {
-        self.error_handler.handle()
+    pub(crate) fn matches(
+        &self,
+        req: httparse::Request,
+        body: &[u8],
+        uri: &Uri,
+    ) -> Result<ResponseFuture, Error> {
+        let mut cases = self.cases.lock()?;
+
+        let req = into_request(req, body, uri)?;
+
+        let mut reasons = Vec::new();
+
+        for case in cases.iter_mut() {
+            let res = case.with.with(&req)?;
+            match res {
+                WithResult::Match => {
+                    case.seen += 1;
+                    return Ok(case.returning.returning(req));
+                }
+                WithResult::Mismatch(new_reasons) => {
+                    reasons.extend(new_reasons);
+                }
+            }
+        }
+
+        // Couldn't find a match, log the error
+        if self.level >= Level::Missing {
+            for reason in reasons {
+                // TODO: pretty reports
+                println!("{:?}", reason);
+            }
+        }
+        Err(Error::NotFound(req))
     }
 }
 
-impl<FE, FM> Connector<FE, FM>
-where
-    FM: DefaultHandler,
-{
-    pub(crate) fn missing(&self) -> Response<String> {
-        self.missing_handler.handle()
-    }
-}
-
-impl<FE, FM> Service<Uri> for Connector<FE, FM> {
-    type Response = MockStream<FE, FM>;
+impl Service<Uri> for Connector {
+    type Response = MockStream;
     type Error = io::Error;
     type Future = Ready<Result<Self::Response, Self::Error>>;
 
@@ -122,7 +112,7 @@ impl<FE, FM> Service<Uri> for Connector<FE, FM> {
     }
 
     fn call(&mut self, req: Uri) -> Self::Future {
-        ready(Ok(MockStream::new(self.clone(), req)))
+        ready(Ok(MockStream::new(self.inner.clone(), req)))
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::{error::BoxError, IntoResultResponse};
+use crate::{error::BoxError, IntoResponse};
 use hyper::Response;
 use std::{future::Future, pin::Pin};
 
@@ -7,7 +7,7 @@ pub type ResponseFuture =
 
 /// Trait for [`Future`]s that return a valid response for [`crate::Returning`]
 ///
-/// See [`IntoResultResponse`] for supported return types.
+/// See [`IntoResponse`] for supported return types.
 ///
 /// ## Example
 ///
@@ -24,9 +24,9 @@ pub trait IntoResponseFuture {
 impl<F> IntoResponseFuture for F
 where
     F: Future + Send + Sync + 'static,
-    F::Output: IntoResultResponse,
+    F::Output: IntoResponse,
 {
     fn into_response_future(self) -> ResponseFuture {
-        Box::pin(async { self.await.into_result_response() })
+        Box::pin(async { self.await.into_response() })
     }
 }

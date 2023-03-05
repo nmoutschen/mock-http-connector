@@ -10,14 +10,13 @@ use std::error::Error as StdError;
 #[tokio::test]
 async fn test_method(#[case] method: Method) -> Result<(), Box<dyn StdError + Send + Sync>> {
     // GIVEN a connector expecting a Method
-    let mut builder = Connector::builder();
-    builder
+    let connector = Connector::new();
+    connector
         .expect()
         .times(1)
-        .with_method(method.clone())?
-        .returning((202, "OK"));
+        .with_method(method.clone())
+        .returning((202, "OK"))?;
 
-    let connector = builder.build();
     let client = hyper::Client::builder().build::<_, Body>(connector.clone());
 
     // WHEN making a request with the right Method
@@ -42,8 +41,8 @@ async fn test_method(#[case] method: Method) -> Result<(), Box<dyn StdError + Se
         )
         .await;
 
-    // THEN it returns another payload
-    assert_that!(res).is_ok().matches(|res| res.status() != 202);
+    // THEN it returns an error
+    assert_that!(res).is_err();
 
     Ok(())
 }
@@ -57,14 +56,13 @@ async fn test_header(
     #[case] value: &'static str,
 ) -> Result<(), Box<dyn StdError + Send + Sync>> {
     // GIVEN a connector expecting a header
-    let mut builder = Connector::builder();
-    builder
+    let connector = Connector::new();
+    connector
         .expect()
         .times(1)
-        .with_header(name.clone(), value)?
-        .returning((202, "OK"));
+        .with_header(name.clone(), value)
+        .returning((202, "OK"))?;
 
-    let connector = builder.build();
     let client = hyper::Client::builder().build::<_, Body>(connector.clone());
 
     // WHEN making a request with the right header
@@ -89,8 +87,8 @@ async fn test_header(
         )
         .await;
 
-    // THEN it returns another payload
-    assert_that!(res).is_ok().matches(|res| res.status() != 202);
+    // THEN it returns an error
+    assert_that!(res).is_err();
 
     // WHEN making a request with a different value for the header
     let res = client
@@ -102,8 +100,8 @@ async fn test_header(
         )
         .await;
 
-    // THEN it returns another payload
-    assert_that!(res).is_ok().matches(|res| res.status() != 202);
+    // THEN it returns an error
+    assert_that!(res).is_err();
 
     Ok(())
 }
@@ -123,15 +121,14 @@ async fn test_headers(
     #[case] value_2: &'static str,
 ) -> Result<(), Box<dyn StdError + Send + Sync>> {
     // GIVEN a connector expecting two headers
-    let mut builder = Connector::builder();
-    builder
+    let connector = Connector::new();
+    connector
         .expect()
         .times(1)
-        .with_header(name_1.clone(), value_1)?
-        .with_header(name_2.clone(), value_2)?
-        .returning((202, "OK"));
+        .with_header(name_1.clone(), value_1)
+        .with_header(name_2.clone(), value_2)
+        .returning((202, "OK"))?;
 
-    let connector = builder.build();
     let client = hyper::Client::builder().build::<_, Body>(connector.clone());
 
     // WHEN making a request with the right headers
@@ -158,8 +155,8 @@ async fn test_headers(
         )
         .await;
 
-    // THEN it returns another payload
-    assert_that!(res).is_ok().matches(|res| res.status() != 202);
+    // THEN it returns an error
+    assert_that!(res).is_err();
 
     Ok(())
 }
@@ -170,14 +167,13 @@ async fn test_headers(
 #[tokio::test]
 async fn test_uri(#[case] uri: &'static str) -> Result<(), Box<dyn StdError + Send + Sync>> {
     // GIVEN a connector expecting an URI
-    let mut builder = Connector::builder();
-    builder
+    let connector = Connector::new();
+    connector
         .expect()
         .times(1)
-        .with_uri(uri)?
-        .returning((202, "OK"));
+        .with_uri(uri)
+        .returning((202, "OK"))?;
 
-    let connector = builder.build();
     let client = hyper::Client::builder().build::<_, Body>(connector.clone());
 
     // WHEN making a request with the right URI
@@ -197,8 +193,8 @@ async fn test_uri(#[case] uri: &'static str) -> Result<(), Box<dyn StdError + Se
         )
         .await;
 
-    // THEN it returns another payload
-    assert_that!(res).is_ok().matches(|res| res.status() != 202);
+    // THEN it returns an error
+    assert_that!(res).is_err();
 
     Ok(())
 }
