@@ -3,6 +3,7 @@ use std::{
     future::Future,
     io,
     pin::Pin,
+    sync::Arc,
     task::{ready, Context, Poll, Waker},
 };
 
@@ -22,11 +23,11 @@ pub struct MockStream {
 
     uri: Uri,
 
-    connector: InnerConnector,
+    connector: Arc<InnerConnector>,
 }
 
 impl MockStream {
-    pub(crate) fn new(connector: InnerConnector, uri: Uri) -> Self {
+    pub(crate) fn new(connector: Arc<InnerConnector>, uri: Uri) -> Self {
         Self {
             res: ResponseState::New,
             req_data: Vec::new(),

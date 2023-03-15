@@ -10,12 +10,13 @@ that makes HTTP calls using [`hyper`].
 # use mock_http_connector::{Connector, Error};
 # tokio_test::block_on(async move {
 // Create a mock Connector
-let connector = Connector::new();
-connector
+let mut builder = Connector::builder();
+builder
     .expect()
     .times(1)
     .with_uri("https://example.com/test")
     .returning("OK")?;
+let connector = builder.build();
 
 // Use it when creating the hyper Client
 let client = hyper::Client::builder().build::<_, Body>(connector.clone());

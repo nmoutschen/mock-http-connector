@@ -10,7 +10,7 @@ mod level;
 mod response;
 mod stream;
 
-pub use builder::CaseBuilder;
+pub use builder::{Builder, CaseBuilder};
 use case::Case;
 pub use connector::Connector;
 pub use error::Error;

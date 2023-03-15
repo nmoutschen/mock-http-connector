@@ -2,10 +2,33 @@ use crate::{
     case::Case,
     connector::InnerConnector,
     handler::{DefaultWith, Returning, With, WithHandler},
-    Error,
+    Connector, Error, Level,
 };
 use hyper::{header::IntoHeaderName, http::HeaderValue, Method, Request, Uri};
 use std::error::Error as StdError;
+
+/// Builder for [`Connector`]
+#[derive(Default)]
+pub struct Builder {
+    inner: InnerConnector,
+}
+
+impl Builder {
+    /// Build into an usable [`Connector`]
+    pub fn build(self) -> Connector {
+        Connector::from_inner(self.inner)
+    }
+
+    /// Set the diagnostics [`Level`] for the connector
+    pub fn level(&mut self, level: Level) {
+        self.inner.level = level;
+    }
+
+    /// Create a new expected case
+    pub fn expect(&mut self) -> CaseBuilder<'_> {
+        CaseBuilder::new(&mut self.inner)
+    }
+}
 
 /// Builder for specific mock cases
 ///
@@ -14,8 +37,8 @@ use std::error::Error as StdError;
 /// ```rust
 /// # use mock_http_connector::Connector;
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// let connector = Connector::new();
-/// let mut case_builder = connector.expect();
+/// let mut builder = Connector::builder();
+/// let mut case_builder = builder.expect();
 ///
 /// case_builder
 ///     .with_uri("https://test.example/some/path")
@@ -25,14 +48,14 @@ use std::error::Error as StdError;
 /// # }
 /// ```
 #[must_use = "case builders do nothing until you call the `returning` method"]
-pub struct CaseBuilder<'b, W = DefaultWith> {
-    connector: &'b InnerConnector,
+pub struct CaseBuilder<'c, W = DefaultWith> {
+    connector: &'c mut InnerConnector,
     with: Result<W, Error>,
     count: Option<usize>,
 }
 
-impl<'b> CaseBuilder<'b> {
-    pub(crate) fn new(connector: &'b InnerConnector) -> Self {
+impl<'c> CaseBuilder<'c> {
+    pub(crate) fn new(connector: &'c mut InnerConnector) -> Self {
         Self {
             connector,
             with: Ok(DefaultWith),
@@ -53,15 +76,15 @@ impl<'b> CaseBuilder<'b> {
     /// # use mock_http_connector::{Connector, Error};
     /// # use std::convert::Infallible;
     /// # || {
-    /// let connector = Connector::new();
-    /// connector
+    /// let mut builder = Connector::builder();
+    /// builder
     ///     .expect()
     ///     .with(|req: &Request<String>| Ok::<_, Infallible>(req.body().contains("hello")))
     ///     .returning("OK")?;
     /// # Ok::<_, Error>(())
     /// # };
     /// ```
-    pub fn with<W, E>(self, with: W) -> CaseBuilder<'b, W>
+    pub fn with<W, E>(self, with: W) -> CaseBuilder<'c, W>
     where
         for<'r> W: Fn(&'r Request<String>) -> Result<bool, E>,
         E: StdError + Send + Sync + 'static,
@@ -81,8 +104,8 @@ impl<'b> CaseBuilder<'b> {
     /// # use hyper::Response;
     /// # use mock_http_connector::{Connector, Error};
     /// # || {
-    /// let connector = Connector::new();
-    /// connector
+    /// let mut builder = Connector::builder();
+    /// builder
     ///     .expect()
     ///     .with_uri("https://example.test/hello")
     ///     .returning("OK")?;
@@ -93,7 +116,7 @@ impl<'b> CaseBuilder<'b> {
     /// ## Remark
     ///
     /// You can combine this with other validators, such as `with_header`, but not with `with`.
-    pub fn with_uri<U>(self, uri: U) -> CaseBuilder<'b, WithHandler>
+    pub fn with_uri<U>(self, uri: U) -> CaseBuilder<'c, WithHandler>
     where
         U: TryInto<Uri>,
         U::Error: Into<hyper::http::Error>,
@@ -113,8 +136,8 @@ impl<'b> CaseBuilder<'b> {
     /// # use hyper::Response;
     /// # use mock_http_connector::{Connector, Error};
     /// # || {
-    /// let connector = Connector::new();
-    /// connector
+    /// let mut builder = Connector::builder();
+    /// builder
     ///     .expect()
     ///     .with_method("GET")
     ///     .returning("OK")?;
@@ -125,7 +148,7 @@ impl<'b> CaseBuilder<'b> {
     /// ## Remark
     ///
     /// You can combine this with other validators, such as `with_uri`, but not with `with`.
-    pub fn with_method<M>(self, method: M) -> CaseBuilder<'b, WithHandler>
+    pub fn with_method<M>(self, method: M) -> CaseBuilder<'c, WithHandler>
     where
         M: TryInto<Method>,
         M::Error: Into<hyper::http::Error>,
@@ -145,8 +168,8 @@ impl<'b> CaseBuilder<'b> {
     /// # use hyper::Response;
     /// # use mock_http_connector::{Connector, Error};
     /// # || {
-    /// let connector = Connector::new();
-    /// connector
+    /// let mut builder = Connector::builder();
+    /// builder
     ///     .expect()
     ///     .with_header("content-type", "application/json")
     ///     .returning("OK")?;
@@ -157,7 +180,7 @@ impl<'b> CaseBuilder<'b> {
     /// ## Remark
     ///
     /// You can combine this with other validators, such as `with_uri`, but not with `with`.
-    pub fn with_header<K, V>(self, key: K, value: V) -> CaseBuilder<'b, WithHandler>
+    pub fn with_header<K, V>(self, key: K, value: V) -> CaseBuilder<'c, WithHandler>
     where
         K: IntoHeaderName,
         V: TryInto<HeaderValue>,
@@ -178,8 +201,8 @@ impl<'b> CaseBuilder<'b> {
     /// # use hyper::Response;
     /// # use mock_http_connector::{Connector, Error};
     /// # || {
-    /// let connector = Connector::new();
-    /// connector
+    /// let mut builder = Connector::builder();
+    /// builder
     ///     .expect()
     ///     .with_body("some body")
     ///     .returning("OK")?;
@@ -193,7 +216,7 @@ impl<'b> CaseBuilder<'b> {
     ///
     /// A mock case only supports `with_body`, `with_json`, or `with_json_value`, but not multiple
     /// ones at the same time.
-    pub fn with_body<B>(self, body: B) -> CaseBuilder<'b, WithHandler>
+    pub fn with_body<B>(self, body: B) -> CaseBuilder<'c, WithHandler>
     where
         B: ToString,
     {
@@ -212,8 +235,8 @@ impl<'b> CaseBuilder<'b> {
     /// # use hyper::Response;
     /// # use mock_http_connector::{Connector, Error};
     /// # || {
-    /// let connector = Connector::new();
-    /// connector
+    /// let mut builder = Connector::builder();
+    /// builder
     ///     .expect()
     ///     .with_json(serde_json::json!({"status": "OK"}))
     ///     .returning("OK")?;
@@ -228,7 +251,7 @@ impl<'b> CaseBuilder<'b> {
     /// A mock case only supports `with_body`, `with_json`, or `with_json_value`, but not multiple
     /// ones at the same time.
     #[cfg(feature = "json")]
-    pub fn with_json<V>(self, value: V) -> CaseBuilder<'b, WithHandler>
+    pub fn with_json<V>(self, value: V) -> CaseBuilder<'c, WithHandler>
     where
         V: serde::Serialize,
     {
@@ -242,7 +265,7 @@ impl<'b> CaseBuilder<'b> {
     /// Match requests that contains the provided JSON payload, but may contain other properties
     ///
     /// You can combine this with other validators, such as `with_uri`, but not with `with`.
-    pub fn with_json_partial<V>(self, value: V) -> CaseBuilder<'b, WithHandler>
+    pub fn with_json_partial<V>(self, value: V) -> CaseBuilder<'c, WithHandler>
     where
         V: serde::Serialize,
     {
@@ -254,7 +277,7 @@ impl<'b> CaseBuilder<'b> {
     }
 }
 
-impl<'b> CaseBuilder<'b, WithHandler> {
+impl<'c> CaseBuilder<'c, WithHandler> {
     #[doc(hidden)]
     pub fn with_uri<U>(mut self, uri: U) -> Self
     where
@@ -316,7 +339,7 @@ impl<'b> CaseBuilder<'b, WithHandler> {
     }
 }
 
-impl<'b, W> CaseBuilder<'b, W> {
+impl<'c, W> CaseBuilder<'c, W> {
     /// Mark how many times this mock case can be called
     ///
     /// Nothing enforces how many times a mock case is called, but you can use the `checkpoint`
@@ -329,7 +352,7 @@ impl<'b, W> CaseBuilder<'b, W> {
     }
 }
 
-impl<'b, W> CaseBuilder<'b, W>
+impl<'c, W> CaseBuilder<'c, W>
 where
     W: With + 'static,
 {
@@ -350,7 +373,7 @@ where
         R: Returning + 'static,
     {
         let case = Case::new(self.with?, returning, self.count);
-        self.connector.cases.lock()?.push(case);
+        self.connector.cases.push(case);
 
         Ok(())
     }
@@ -366,7 +389,7 @@ mod tests {
 
     #[test]
     fn test_with() {
-        let connector = Connector::new();
+        let mut connector = Connector::builder();
         connector
             .expect()
             .with(|req: &Request<String>| Ok::<_, Infallible>(req.body().contains("hello")))

@@ -15,12 +15,14 @@ async fn test_status_u16(
     #[case] status: StatusCode,
 ) -> Result<(), Box<dyn StdError + Send + Sync>> {
     // GIVEN a client that returns `status` as an u16
-    let connector = Connector::new();
-    connector
+    let mut builder = Connector::builder();
+    builder
         .expect()
         .times(1)
         .with_uri("http://test.example")
         .returning(status.as_u16())?;
+    let connector = builder.build();
+
     let client = hyper::Client::builder().build::<_, Body>(connector.clone());
 
     // WHEN making a request
@@ -52,12 +54,14 @@ async fn test_status_tuple(
     #[case] status: StatusCode,
 ) -> Result<(), Box<dyn StdError + Send + Sync>> {
     // GIVEN a client that returns `status` as a tuple
-    let connector = Connector::new();
-    connector
+    let mut builder = Connector::builder();
+    builder
         .expect()
         .times(1)
         .with_uri("http://test.example")
         .returning((status.as_u16(), "moved"))?;
+    let connector = builder.build();
+
     let client = hyper::Client::builder().build::<_, Body>(connector.clone());
 
     // WHEN making a requests
@@ -87,9 +91,9 @@ async fn test_status_tuple(
 #[tokio::test]
 async fn test_status_fn(#[case] status: StatusCode) -> Result<(), Box<dyn StdError + Send + Sync>> {
     // GIVEN a client that returns `status` through a closure
-    let connector = Connector::new();
+    let mut builder = Connector::builder();
     let moved_status = status.clone();
-    connector
+    builder
         .expect()
         .times(1)
         .with_uri("http://test.example")
@@ -99,6 +103,8 @@ async fn test_status_fn(#[case] status: StatusCode) -> Result<(), Box<dyn StdErr
                 .header("location", "/some-location")
                 .body("")
         })?;
+    let connector = builder.build();
+
     let client = hyper::Client::builder().build::<_, Body>(connector.clone());
 
     // WHEN making a requests

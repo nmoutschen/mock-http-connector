@@ -1,4 +1,4 @@
-use std::{error::Error as StdError, sync::PoisonError};
+use std::error::Error as StdError;
 
 use hyper::Request;
 
@@ -28,10 +28,6 @@ pub enum Error {
     #[error("JSON serde error: {0}")]
     Json(#[from] serde_json::Error),
 
-    /// Mutex lock poisoning
-    #[error("lock poison error: {0}")]
-    Lock(String),
-
     /// No match found for the incoming [`Request`]
     #[error("no cases matched the request: {0:?}")]
     NotFound(Request<String>),
@@ -39,12 +35,6 @@ pub enum Error {
     /// Runtime errors
     #[error("transparent")]
     Runtime(#[from] BoxError),
-}
-
-impl<T> From<PoisonError<T>> for Error {
-    fn from(value: PoisonError<T>) -> Self {
-        Self::Lock(value.to_string())
-    }
 }
 
 pub type BoxError = Box<dyn StdError + Send + Sync>;

@@ -2,15 +2,15 @@ use std::{
     future::{ready, Ready},
     io,
     str::from_utf8,
-    sync::{Arc, Mutex},
+    sync::{atomic::Ordering, Arc},
     task::{Context, Poll},
 };
 
 use hyper::{service::Service, Request, Uri};
 
 use crate::{
-    error::BoxError, handler::WithResult, response::ResponseFuture, stream::MockStream, Case,
-    CaseBuilder, Error, Level,
+    builder::Builder, error::BoxError, handler::WithResult, response::ResponseFuture,
+    stream::MockStream, Case, Error, Level,
 };
 
 /// Mock connector for [`hyper::Client`]
@@ -18,23 +18,13 @@ use crate::{
 /// See the crate documentation for how to configure the connector.
 #[derive(Default, Clone)]
 pub struct Connector {
-    inner: InnerConnector,
+    inner: Arc<InnerConnector>,
 }
 
 impl Connector {
-    /// Create a new [`Connector`] without any cases
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Set the diagnostics [`Level`] for the connector
-    pub fn level(&mut self, level: Level) {
-        self.inner.level = level;
-    }
-
-    /// Create a new expected case
-    pub fn expect(&self) -> CaseBuilder<'_> {
-        CaseBuilder::new(&self.inner)
+    /// Create a new [`Builder`]
+    pub fn builder() -> Builder {
+        Builder::default()
     }
 
     /// Check if all the mock cases were called the right amount of time
@@ -43,18 +33,24 @@ impl Connector {
     pub fn checkpoint(&self) -> Result<(), Error> {
         self.inner.checkpoint()
     }
+
+    pub(crate) fn from_inner(inner: InnerConnector) -> Self {
+        Self {
+            inner: Arc::new(inner),
+        }
+    }
 }
 
-#[derive(Default, Clone)]
+#[derive(Default)]
 pub(crate) struct InnerConnector {
     pub level: Level,
-    pub cases: Arc<Mutex<Vec<Case>>>,
+    pub cases: Vec<Case>,
 }
 
 impl InnerConnector {
     pub fn checkpoint(&self) -> Result<(), Error> {
-        let cases = self.cases.lock()?;
-        let checkpoints = cases
+        let checkpoints = self
+            .cases
             .iter()
             .filter_map(|case| case.checkpoint())
             .collect::<Vec<_>>();
@@ -72,17 +68,15 @@ impl InnerConnector {
         body: &[u8],
         uri: &Uri,
     ) -> Result<ResponseFuture, Error> {
-        let mut cases = self.cases.lock()?;
-
         let req = into_request(req, body, uri)?;
 
         let mut reasons = Vec::new();
 
-        for case in cases.iter_mut() {
+        for case in self.cases.iter() {
             let res = case.with.with(&req)?;
             match res {
                 WithResult::Match => {
-                    case.seen += 1;
+                    case.seen.fetch_add(1, Ordering::Release);
                     return Ok(case.returning.returning(req));
                 }
                 WithResult::Mismatch(new_reasons) => {

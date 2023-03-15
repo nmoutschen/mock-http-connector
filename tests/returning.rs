@@ -8,12 +8,13 @@ use std::{error::Error as StdError, str::from_utf8};
 #[tokio::test]
 async fn test_async() -> Result<(), Box<dyn StdError + Send + Sync>> {
     // GIVEN a connector with an async function
-    let connector = Connector::new();
-    connector
+    let mut builder = Connector::builder();
+    builder
         .expect()
         .times(1)
         .with_uri("http://test.example")
         .returning(|_req| async { "hello" })?;
+    let connector = builder.build();
     let client = hyper::Client::builder().build::<_, Body>(connector.clone());
 
     // WHEN making a request
@@ -41,12 +42,14 @@ async fn test_async() -> Result<(), Box<dyn StdError + Send + Sync>> {
 #[tokio::test]
 async fn test_json() -> Result<(), Box<dyn StdError + Send + Sync>> {
     // GIVEN a connector returning a json payload
-    let connector = Connector::new();
-    connector
+    let mut builder = Connector::builder();
+    builder
         .expect()
         .times(1)
         .with_uri("http://test.example")
         .returning(serde_json::json!({"value": 3}))?;
+    let connector = builder.build();
+
     let client = hyper::Client::builder().build::<_, Body>(connector.clone());
 
     // WHEN making a request
