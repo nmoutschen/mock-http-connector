@@ -12,8 +12,8 @@ async fn test_async() -> Result<(), Box<dyn StdError + Send + Sync>> {
     builder
         .expect()
         .times(1)
-        .with_uri("http://test.example")?
-        .returning(|_req| async { "hello" });
+        .with_uri("http://test.example")
+        .returning(|_req| async { "hello" })?;
     let connector = builder.build();
     let client = hyper::Client::builder().build::<_, Body>(connector.clone());
 
@@ -46,9 +46,10 @@ async fn test_json() -> Result<(), Box<dyn StdError + Send + Sync>> {
     builder
         .expect()
         .times(1)
-        .with_uri("http://test.example")?
-        .returning(serde_json::json!({"value": 3}));
+        .with_uri("http://test.example")
+        .returning(serde_json::json!({"value": 3}))?;
     let connector = builder.build();
+
     let client = hyper::Client::builder().build::<_, Body>(connector.clone());
 
     // WHEN making a request

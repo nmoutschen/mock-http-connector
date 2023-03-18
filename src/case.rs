@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 
 use crate::handler::{Returning, With};
 
@@ -7,7 +10,7 @@ pub(crate) struct Case {
     pub(crate) with: Arc<Box<dyn With + Send + Sync>>,
     pub(crate) returning: Arc<Box<dyn Returning + Send + Sync>>,
     count: Option<usize>,
-    pub(crate) seen: usize,
+    pub(crate) seen: Arc<AtomicUsize>,
 }
 
 impl Case {
@@ -20,13 +23,13 @@ impl Case {
             with: Arc::new(Box::new(with)),
             returning: Arc::new(Box::new(returning)),
             count,
-            seen: 0,
+            seen: Arc::new(AtomicUsize::new(0)),
         }
     }
 
     pub fn checkpoint(&self) -> Option<Checkpoint> {
         self.count
-            .and_then(|count| Checkpoint::check(count, self.seen))
+            .and_then(|count| Checkpoint::check(count, self.seen.load(Ordering::Acquire)))
     }
 }
 

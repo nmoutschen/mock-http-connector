@@ -1,90 +1,32 @@
 use crate::{
     case::Case,
-    handler::{
-        DefaultErrorHandler, DefaultMissingHandler, DefaultWith, Returning, With, WithHandler,
-    },
-    Connector, Error,
+    connector::InnerConnector,
+    handler::{DefaultWith, Returning, With, WithHandler},
+    Connector, Error, Level,
 };
-use hyper::{header::IntoHeaderName, http::HeaderValue, Method, Request, Response, Uri};
+use hyper::{header::IntoHeaderName, http::HeaderValue, Method, Request, Uri};
 use std::error::Error as StdError;
 
 /// Builder for [`Connector`]
-pub struct Builder<FE = DefaultErrorHandler, FM = DefaultMissingHandler> {
-    cases: Vec<Case>,
-    error_handler: FE,
-    missing_handler: FM,
+#[derive(Default)]
+pub struct Builder {
+    inner: InnerConnector,
 }
 
-impl<FE, FM> Builder<FE, FM> {
-    /// Create a new expectation
-    pub fn expect(&mut self) -> CaseBuilder<'_, FE, FM> {
-        CaseBuilder::new(self)
+impl Builder {
+    /// Build into an usable [`Connector`]
+    pub fn build(self) -> Connector {
+        Connector::from_inner(self.inner)
     }
 
-    /// Remplace the default error handler
-    ///
-    /// `error_handler` should be a function or closure that returns a `hyper::Response<String>`.
-    ///
-    /// It will be called whenever there is an internal error to return a valid payload to the
-    /// client.
-    ///
-    /// ## Example
-    ///
-    /// ```rust
-    /// # use hyper::Response;
-    /// # use mock_http_connector::Connector;
-    /// let builder = Connector::builder().error(|| Response::builder().body("Something went wrong!".to_string()).unwrap());
-    /// ```
-    pub fn error<NF>(self, error_handler: NF) -> Builder<NF, FM>
-    where
-        NF: Fn() -> Response<String>,
-    {
-        Builder {
-            cases: self.cases,
-            error_handler,
-            missing_handler: self.missing_handler,
-        }
+    /// Set the diagnostics [`Level`] for the connector
+    pub fn level(&mut self, level: Level) {
+        self.inner.level = level;
     }
 
-    /// Remplace the default missing handler
-    ///
-    /// `missing_handler` should be a function or closure that returns a `hyper::Response<String>`.
-    ///
-    /// It will be called whenever no expectation matches the incoming request.
-    ///
-    /// ## Example
-    ///
-    /// ```rust
-    /// # use hyper::Response;
-    /// # use mock_http_connector::Connector;
-    /// let builder = Connector::builder().missing(|| Response::builder().body("Request not found!".to_string()).unwrap());
-    /// ```
-    pub fn missing<NF>(self, missing_handler: NF) -> Builder<FE, NF>
-    where
-        NF: Fn() -> Response<String>,
-    {
-        Builder {
-            cases: self.cases,
-            error_handler: self.error_handler,
-            missing_handler,
-        }
-    }
-
-    /// Build the [`Connector`]
-    ///
-    /// This will consume the [`Builder`]
-    pub fn build(self) -> Connector<FE, FM> {
-        Connector::new(self.cases, self.error_handler, self.missing_handler)
-    }
-}
-
-impl Default for Builder {
-    fn default() -> Self {
-        Self {
-            cases: Default::default(),
-            error_handler: DefaultErrorHandler,
-            missing_handler: DefaultMissingHandler,
-        }
+    /// Create a new expected case
+    pub fn expect(&mut self) -> CaseBuilder<'_> {
+        CaseBuilder::new(&mut self.inner)
     }
 }
 
@@ -99,24 +41,24 @@ impl Default for Builder {
 /// let mut case_builder = builder.expect();
 ///
 /// case_builder
-///     .with_uri("https://test.example/some/path")?
+///     .with_uri("https://test.example/some/path")
 ///     .times(3)
-///     .returning("Some response");
+///     .returning("Some response")?;
 /// # Ok(())
 /// # }
 /// ```
 #[must_use = "case builders do nothing until you call the `returning` method"]
-pub struct CaseBuilder<'b, FE, FM, W = DefaultWith> {
-    builder: &'b mut Builder<FE, FM>,
-    with: W,
+pub struct CaseBuilder<'c, W = DefaultWith> {
+    connector: &'c mut InnerConnector,
+    with: Result<W, Error>,
     count: Option<usize>,
 }
 
-impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
-    fn new(builder: &'b mut Builder<FE, FM>) -> Self {
+impl<'c> CaseBuilder<'c> {
+    pub(crate) fn new(connector: &'c mut InnerConnector) -> Self {
         Self {
-            builder,
-            with: DefaultWith,
+            connector,
+            with: Ok(DefaultWith),
             count: None,
         }
     }
@@ -131,22 +73,25 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
     ///
     /// ```rust
     /// # use hyper::{Response, Request};
-    /// # use mock_http_connector::Connector;
+    /// # use mock_http_connector::{Connector, Error};
     /// # use std::convert::Infallible;
+    /// # || {
     /// let mut builder = Connector::builder();
     /// builder
     ///     .expect()
     ///     .with(|req: &Request<String>| Ok::<_, Infallible>(req.body().contains("hello")))
-    ///     .returning("OK");
+    ///     .returning("OK")?;
+    /// # Ok::<_, Error>(())
+    /// # };
     /// ```
-    pub fn with<W, E>(self, with: W) -> CaseBuilder<'b, FE, FM, W>
+    pub fn with<W, E>(self, with: W) -> CaseBuilder<'c, W>
     where
         for<'r> W: Fn(&'r Request<String>) -> Result<bool, E>,
         E: StdError + Send + Sync + 'static,
     {
         CaseBuilder {
-            builder: self.builder,
-            with,
+            connector: self.connector,
+            with: Ok(with),
             count: self.count,
         }
     }
@@ -162,8 +107,8 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
     /// let mut builder = Connector::builder();
     /// builder
     ///     .expect()
-    ///     .with_uri("https://example.test/hello")?
-    ///     .returning("OK");
+    ///     .with_uri("https://example.test/hello")
+    ///     .returning("OK")?;
     /// # Ok::<_, Error>(())
     /// # };
     /// ```
@@ -171,16 +116,16 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
     /// ## Remark
     ///
     /// You can combine this with other validators, such as `with_header`, but not with `with`.
-    pub fn with_uri<U>(self, uri: U) -> Result<CaseBuilder<'b, FE, FM, WithHandler>, Error>
+    pub fn with_uri<U>(self, uri: U) -> CaseBuilder<'c, WithHandler>
     where
         U: TryInto<Uri>,
         U::Error: Into<hyper::http::Error>,
     {
-        Ok(CaseBuilder {
-            builder: self.builder,
-            with: WithHandler::default().with_uri(uri)?,
+        CaseBuilder {
+            connector: self.connector,
+            with: WithHandler::default().with_uri(uri),
             count: self.count,
-        })
+        }
     }
 
     /// Match requests with the specified [`Method`]
@@ -194,8 +139,8 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
     /// let mut builder = Connector::builder();
     /// builder
     ///     .expect()
-    ///     .with_method("GET")?
-    ///     .returning("OK");
+    ///     .with_method("GET")
+    ///     .returning("OK")?;
     /// # Ok::<_, Error>(())
     /// # };
     /// ```
@@ -203,16 +148,16 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
     /// ## Remark
     ///
     /// You can combine this with other validators, such as `with_uri`, but not with `with`.
-    pub fn with_method<M>(self, method: M) -> Result<CaseBuilder<'b, FE, FM, WithHandler>, Error>
+    pub fn with_method<M>(self, method: M) -> CaseBuilder<'c, WithHandler>
     where
         M: TryInto<Method>,
         M::Error: Into<hyper::http::Error>,
     {
-        Ok(CaseBuilder {
-            builder: self.builder,
-            with: WithHandler::default().with_method(method)?,
+        CaseBuilder {
+            connector: self.connector,
+            with: WithHandler::default().with_method(method),
             count: self.count,
-        })
+        }
     }
 
     /// Match requests that contains the specific header
@@ -226,8 +171,8 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
     /// let mut builder = Connector::builder();
     /// builder
     ///     .expect()
-    ///     .with_header("content-type", "application/json")?
-    ///     .returning("OK");
+    ///     .with_header("content-type", "application/json")
+    ///     .returning("OK")?;
     /// # Ok::<_, Error>(())
     /// # };
     /// ```
@@ -235,21 +180,17 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
     /// ## Remark
     ///
     /// You can combine this with other validators, such as `with_uri`, but not with `with`.
-    pub fn with_header<K, V>(
-        self,
-        key: K,
-        value: V,
-    ) -> Result<CaseBuilder<'b, FE, FM, WithHandler>, Error>
+    pub fn with_header<K, V>(self, key: K, value: V) -> CaseBuilder<'c, WithHandler>
     where
         K: IntoHeaderName,
         V: TryInto<HeaderValue>,
         V::Error: Into<hyper::http::Error>,
     {
-        Ok(CaseBuilder {
-            builder: self.builder,
-            with: WithHandler::default().with_header(key, value)?,
+        CaseBuilder {
+            connector: self.connector,
+            with: WithHandler::default().with_header(key, value),
             count: self.count,
-        })
+        }
     }
 
     /// Match requests that contains the provided payload
@@ -258,12 +199,15 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
     ///
     /// ```rust
     /// # use hyper::Response;
-    /// # use mock_http_connector::Connector;
+    /// # use mock_http_connector::{Connector, Error};
+    /// # || {
     /// let mut builder = Connector::builder();
     /// builder
     ///     .expect()
     ///     .with_body("some body")
-    ///     .returning("OK");
+    ///     .returning("OK")?;
+    /// # Ok::<_, Error>(())
+    /// # };
     /// ```
     ///
     /// ## Remark
@@ -272,13 +216,13 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
     ///
     /// A mock case only supports `with_body`, `with_json`, or `with_json_value`, but not multiple
     /// ones at the same time.
-    pub fn with_body<B>(self, body: B) -> CaseBuilder<'b, FE, FM, WithHandler>
+    pub fn with_body<B>(self, body: B) -> CaseBuilder<'c, WithHandler>
     where
         B: ToString,
     {
         CaseBuilder {
-            builder: self.builder,
-            with: WithHandler::default().with_body(body),
+            connector: self.connector,
+            with: Ok(WithHandler::default().with_body(body)),
             count: self.count,
         }
     }
@@ -294,8 +238,8 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
     /// let mut builder = Connector::builder();
     /// builder
     ///     .expect()
-    ///     .with_json(serde_json::json!({"status": "OK"}))?
-    ///     .returning("OK");
+    ///     .with_json(serde_json::json!({"status": "OK"}))
+    ///     .returning("OK")?;
     /// # Ok::<_, Error>(())
     /// # };
     /// ```
@@ -307,65 +251,62 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM> {
     /// A mock case only supports `with_body`, `with_json`, or `with_json_value`, but not multiple
     /// ones at the same time.
     #[cfg(feature = "json")]
-    pub fn with_json<V>(self, value: V) -> Result<CaseBuilder<'b, FE, FM, WithHandler>, Error>
+    pub fn with_json<V>(self, value: V) -> CaseBuilder<'c, WithHandler>
     where
         V: serde::Serialize,
     {
-        Ok(CaseBuilder {
-            builder: self.builder,
-            with: WithHandler::default().with_json(value)?,
+        CaseBuilder {
+            connector: self.connector,
+            with: WithHandler::default().with_json(value),
             count: self.count,
-        })
+        }
     }
 
     /// Match requests that contains the provided JSON payload, but may contain other properties
     ///
     /// You can combine this with other validators, such as `with_uri`, but not with `with`.
-    pub fn with_json_partial<V>(
-        self,
-        value: V,
-    ) -> Result<CaseBuilder<'b, FE, FM, WithHandler>, Error>
+    pub fn with_json_partial<V>(self, value: V) -> CaseBuilder<'c, WithHandler>
     where
         V: serde::Serialize,
     {
-        Ok(CaseBuilder {
-            builder: self.builder,
-            with: WithHandler::default().with_json_partial(value)?,
+        CaseBuilder {
+            connector: self.connector,
+            with: WithHandler::default().with_json_partial(value),
             count: self.count,
-        })
+        }
     }
 }
 
-impl<'b, FE, FM> CaseBuilder<'b, FE, FM, WithHandler> {
+impl<'c> CaseBuilder<'c, WithHandler> {
     #[doc(hidden)]
-    pub fn with_uri<U>(mut self, uri: U) -> Result<Self, Error>
+    pub fn with_uri<U>(mut self, uri: U) -> Self
     where
         U: TryInto<Uri>,
         U::Error: Into<hyper::http::Error>,
     {
-        self.with = self.with.with_uri(uri)?;
-        Ok(self)
+        self.with = self.with.and_then(|w| w.with_uri(uri));
+        self
     }
 
     #[doc(hidden)]
-    pub fn with_method<M>(mut self, method: M) -> Result<Self, Error>
+    pub fn with_method<M>(mut self, method: M) -> Self
     where
         M: TryInto<Method>,
         M::Error: Into<hyper::http::Error>,
     {
-        self.with = self.with.with_method(method)?;
-        Ok(self)
+        self.with = self.with.and_then(|w| w.with_method(method));
+        self
     }
 
     #[doc(hidden)]
-    pub fn with_header<K, V>(mut self, key: K, value: V) -> Result<Self, Error>
+    pub fn with_header<K, V>(mut self, key: K, value: V) -> Self
     where
         K: IntoHeaderName,
         V: TryInto<HeaderValue>,
         V::Error: Into<hyper::http::Error>,
     {
-        self.with = self.with.with_header(key, value)?;
-        Ok(self)
+        self.with = self.with.and_then(|w| w.with_header(key, value));
+        self
     }
 
     #[doc(hidden)]
@@ -373,32 +314,32 @@ impl<'b, FE, FM> CaseBuilder<'b, FE, FM, WithHandler> {
     where
         B: ToString,
     {
-        self.with = self.with.with_body(body);
+        self.with = self.with.map(|w| w.with_body(body));
         self
     }
 
     #[doc(hidden)]
     #[cfg(feature = "json")]
-    pub fn with_json<V>(mut self, value: V) -> Result<Self, Error>
+    pub fn with_json<V>(mut self, value: V) -> Self
     where
         V: serde::Serialize,
     {
-        self.with = self.with.with_json(value)?;
-        Ok(self)
+        self.with = self.with.and_then(|w| w.with_json(value));
+        self
     }
 
     #[doc(hidden)]
     #[cfg(feature = "json")]
-    pub fn with_json_partial<V>(mut self, value: V) -> Result<Self, Error>
+    pub fn with_json_partial<V>(mut self, value: V) -> Self
     where
         V: serde::Serialize,
     {
-        self.with = self.with.with_json_partial(value)?;
-        Ok(self)
+        self.with = self.with.and_then(|w| w.with_json_partial(value));
+        self
     }
 }
 
-impl<'b, FE, FM, W> CaseBuilder<'b, FE, FM, W> {
+impl<'c, W> CaseBuilder<'c, W> {
     /// Mark how many times this mock case can be called
     ///
     /// Nothing enforces how many times a mock case is called, but you can use the `checkpoint`
@@ -411,7 +352,7 @@ impl<'b, FE, FM, W> CaseBuilder<'b, FE, FM, W> {
     }
 }
 
-impl<'b, FE, FM, W> CaseBuilder<'b, FE, FM, W>
+impl<'c, W> CaseBuilder<'c, W>
 where
     W: With + 'static,
 {
@@ -422,12 +363,19 @@ where
     ///
     /// See the documentation for [`Returning`] to see the full list of what is accepted by this
     /// method.
-    pub fn returning<R>(self, returning: R)
+    ///
+    /// ## Errors
+    ///
+    /// This will fail if any of the previous steps in [`CaseBuilder`] failed, or if it fails to
+    /// store the case into the connector.
+    pub fn returning<R>(self, returning: R) -> Result<(), Error>
     where
         R: Returning + 'static,
     {
-        let case = Case::new(self.with, returning, self.count);
-        self.builder.cases.push(case);
+        let case = Case::new(self.with?, returning, self.count);
+        self.connector.cases.push(case);
+
+        Ok(())
     }
 }
 
@@ -435,14 +383,17 @@ where
 mod tests {
     use std::convert::Infallible;
 
+    use crate::Connector;
+
     use super::*;
 
     #[test]
     fn test_with() {
-        let mut builder = Connector::builder();
-        builder
+        let mut connector = Connector::builder();
+        connector
             .expect()
             .with(|req: &Request<String>| Ok::<_, Infallible>(req.body().contains("hello")))
-            .returning("OK");
+            .returning("OK")
+            .unwrap();
     }
 }

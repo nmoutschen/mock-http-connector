@@ -1,6 +1,6 @@
 use crate::{error::BoxError, Error};
 use hyper::{header::IntoHeaderName, http::HeaderValue, HeaderMap, Method, Request, Uri};
-use std::error::Error as StdError;
+use std::{any::Any, borrow::Cow, error::Error as StdError};
 
 #[cfg(feature = "json")]
 mod json;
@@ -9,6 +9,8 @@ use json::JsonEq;
 
 pub trait With: Send + Sync {
     fn with(&self, req: &Request<String>) -> Result<bool, BoxError>;
+
+    fn print_pretty(&self) -> WithPrint<'_>;
 }
 
 #[derive(Debug)]
@@ -18,16 +20,39 @@ impl With for DefaultWith {
     fn with(&self, _req: &Request<String>) -> Result<bool, BoxError> {
         Ok(true)
     }
+
+    fn print_pretty(&self) -> WithPrint<'_> {
+        let name = "default case".into();
+        let body = None;
+
+        WithPrint { name, body }
+    }
 }
 
-impl<F, E> With for F
+impl<F, E, R> With for F
 where
-    for<'r> F: Fn(&'r Request<String>) -> Result<bool, E> + Send + Sync,
+    F: Fn(&Request<String>) -> Result<R, E> + Any + Send + Sync,
+    R: Into<bool> + Send + Sync + 'static,
     E: StdError + Send + Sync + 'static,
 {
     fn with(&self, req: &Request<String>) -> Result<bool, BoxError> {
-        (self)(req).map_err(Into::into)
+        (self)(req).map(Into::into).map_err(Into::into)
     }
+
+    fn print_pretty(&self) -> WithPrint<'_> {
+        fn type_name_of_val<T: Any>(_val: &T) -> &'static str {
+            std::any::type_name::<T>()
+        }
+
+        let name = format!("closure {}", type_name_of_val(self)).into();
+
+        WithPrint { name, body: None }
+    }
+}
+
+pub struct WithPrint<'w> {
+    pub name: Cow<'w, str>,
+    pub body: Option<Cow<'w, str>>,
 }
 
 #[derive(Default, Debug)]
@@ -106,12 +131,16 @@ impl WithHandler {
 
 impl With for WithHandler {
     fn with(&self, req: &Request<String>) -> Result<bool, BoxError> {
-        if self.uri.is_some() && Some(req.uri()) != self.uri.as_ref() {
-            return Ok(false);
+        if let Some(method) = &self.method {
+            if method != req.method() {
+                return Ok(false);
+            }
         }
 
-        if self.method.is_some() && Some(req.method()) != self.method.as_ref() {
-            return Ok(false);
+        if let Some(uri) = &self.uri {
+            if uri != req.uri() {
+                return Ok(false);
+            }
         }
 
         if let Some(headers) = &self.headers {
@@ -152,6 +181,49 @@ impl With for WithHandler {
         }
 
         Ok(true)
+    }
+
+    fn print_pretty(&self) -> WithPrint<'_> {
+        let name = "WithHandler".into();
+        let mut print_body = Vec::new();
+
+        if let Some(method) = &self.method {
+            print_body.push(format!("method:  `{method}`"));
+        }
+
+        if let Some(uri) = &self.uri {
+            print_body.push(format!("uri:     `{uri}`"));
+        }
+
+        if let Some(headers) = &self.headers {
+            print_body.push("headers:".to_string());
+            for (key, value) in headers {
+                let value = if let Ok(value) = value.to_str() {
+                    value.into()
+                } else {
+                    format!("{value:?}")
+                };
+                print_body.push(format!("  {key}: {value}"));
+            }
+        }
+
+        match &self.body {
+            Some(Body::Json(body)) => {
+                print_body.push(format!("full json match:\n{body:#}"));
+            }
+            Some(Body::JsonPartial(body)) => {
+                print_body.push(format!("partial json match:\n{body:#}"));
+            }
+            Some(Body::String(body)) => {
+                print_body.push(format!("body:\n{body}"));
+            }
+            None => (),
+        }
+
+        WithPrint {
+            name,
+            body: Some(print_body.join("\n").into()),
+        }
     }
 }
 

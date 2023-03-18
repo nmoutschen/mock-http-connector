@@ -3,6 +3,7 @@ use std::{
     future::Future,
     io,
     pin::Pin,
+    sync::Arc,
     task::{ready, Context, Poll, Waker},
 };
 
@@ -13,20 +14,20 @@ use hyper::{
 };
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-use crate::{handler::DefaultHandler, response::ResponseFuture, Connector};
+use crate::{connector::InnerConnector, response::ResponseFuture, Error};
 
-pub struct MockStream<FE, FM> {
+pub struct MockStream {
     res: ResponseState,
     req_data: Vec<u8>,
     waker: Option<Waker>,
 
     uri: Uri,
 
-    connector: Connector<FE, FM>,
+    connector: Arc<InnerConnector>,
 }
 
-impl<FE, FM> MockStream<FE, FM> {
-    pub(crate) fn new(connector: Connector<FE, FM>, uri: Uri) -> Self {
+impl MockStream {
+    pub(crate) fn new(connector: Arc<InnerConnector>, uri: Uri) -> Self {
         Self {
             res: ResponseState::New,
             req_data: Vec::new(),
@@ -37,17 +38,13 @@ impl<FE, FM> MockStream<FE, FM> {
     }
 }
 
-impl<FE, FM> Connection for MockStream<FE, FM> {
+impl Connection for MockStream {
     fn connected(&self) -> Connected {
         Connected::new()
     }
 }
 
-impl<FE, FM> AsyncRead for MockStream<FE, FM>
-where
-    FE: DefaultHandler,
-    FM: DefaultHandler,
-{
+impl AsyncRead for MockStream {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -59,7 +56,8 @@ where
                 return Poll::Pending;
             }
             ResponseState::Fut(fut) => {
-                let res = ready!(Pin::new(fut).poll(cx)).unwrap_or_else(|_| self.connector.error());
+                let res = ready!(Pin::new(fut).poll(cx))
+                    .map_err(|err| into_connect_error(Error::Runtime(err)))?;
                 (into_data(res)?, 0)
             }
             ResponseState::Data(data, pos) => (data.clone(), *pos),
@@ -77,11 +75,7 @@ where
     }
 }
 
-impl<FE, FM> AsyncWrite for MockStream<FE, FM>
-where
-    FE: DefaultHandler,
-    FM: DefaultHandler,
-{
+impl AsyncWrite for MockStream {
     fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
         Poll::Ready(Ok(()))
     }
@@ -99,27 +93,20 @@ where
         let mut req = Request::new(&mut headers);
         self.req_data.extend(buf);
 
-        let status = match req.parse(&self.req_data) {
-            Ok(status) => status,
-            Err(_err) => {
-                self.res = ResponseState::Data(into_data(self.connector.error())?, 0);
-                if let Some(w) = self.waker.take() {
-                    w.wake()
-                }
-                return Poll::Ready(Ok(buf.len()));
-            }
-        };
+        let status = req
+            .parse(&self.req_data)
+            .map_err(|err| into_connect_error(err.into()))?;
 
         let body = match status {
             Status::Complete(body_pos) => &self.req_data[body_pos..],
             Status::Partial => &[],
         };
 
-        self.res = match self.connector.matches(req, body, &self.uri) {
-            Ok(Some(res)) => ResponseState::Fut(res),
-            Ok(None) => ResponseState::Data(into_data(self.connector.missing())?, 0),
-            Err(_err) => ResponseState::Data(into_data(self.connector.error())?, 0),
-        };
+        self.res = ResponseState::Fut(
+            self.connector
+                .matches(req, body, &self.uri)
+                .map_err(into_connect_error)?,
+        );
 
         if let Some(w) = self.waker.take() {
             w.wake()
@@ -159,4 +146,8 @@ fn into_data(res: Response<String>) -> Result<Vec<u8>, io::Error> {
     data.push_str(res.body());
 
     Ok(data.into_bytes())
+}
+
+fn into_connect_error(err: Error) -> io::Error {
+    io::Error::new(io::ErrorKind::ConnectionRefused, err)
 }

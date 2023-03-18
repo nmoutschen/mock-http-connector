@@ -19,9 +19,10 @@ async fn test_status_u16(
     builder
         .expect()
         .times(1)
-        .with_uri("http://test.example")?
-        .returning(status.as_u16());
+        .with_uri("http://test.example")
+        .returning(status.as_u16())?;
     let connector = builder.build();
+
     let client = hyper::Client::builder().build::<_, Body>(connector.clone());
 
     // WHEN making a request
@@ -57,9 +58,10 @@ async fn test_status_tuple(
     builder
         .expect()
         .times(1)
-        .with_uri("http://test.example")?
-        .returning((status.as_u16(), "moved"));
+        .with_uri("http://test.example")
+        .returning((status.as_u16(), "moved"))?;
     let connector = builder.build();
+
     let client = hyper::Client::builder().build::<_, Body>(connector.clone());
 
     // WHEN making a requests
@@ -94,14 +96,15 @@ async fn test_status_fn(#[case] status: StatusCode) -> Result<(), Box<dyn StdErr
     builder
         .expect()
         .times(1)
-        .with_uri("http://test.example")?
+        .with_uri("http://test.example")
         .returning(move |_| async move {
             Response::builder()
                 .status(moved_status)
                 .header("location", "/some-location")
                 .body("")
-        });
+        })?;
     let connector = builder.build();
+
     let client = hyper::Client::builder().build::<_, Body>(connector.clone());
 
     // WHEN making a requests

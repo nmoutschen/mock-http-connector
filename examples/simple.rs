@@ -4,7 +4,11 @@ use mock_http_connector::Connector;
 #[tokio::main]
 async fn main() {
     let mut builder = Connector::builder();
-    builder.expect().times(1).returning(|_| async { "" });
+    builder
+        .expect()
+        .times(1)
+        .returning(|_| async { "" })
+        .unwrap();
     let connector = builder.build();
 
     let client = hyper::Client::builder().build::<_, Body>(connector.clone());

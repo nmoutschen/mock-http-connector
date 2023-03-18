@@ -14,8 +14,8 @@ let mut builder = Connector::builder();
 builder
     .expect()
     .times(1)
-    .with_uri("https://example.com/test")?
-    .returning("OK");
+    .with_uri("https://example.com/test")
+    .returning("OK")?;
 let connector = builder.build();
 
 // Use it when creating the hyper Client
@@ -25,11 +25,10 @@ let client = hyper::Client::builder().build::<_, Body>(connector.clone());
 let _res = client
 .request(
     Request::builder()
-        .uri("http://example.com/test")
+        .uri("https://example.com/test")
         .body("".to_string().into())?,
 )
-.await
-.unwrap();
+.await?;
 
 // Check if all expectations were called the right number of times
 connector.checkpoint()?;
