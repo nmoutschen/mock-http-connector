@@ -10,7 +10,7 @@ use json::JsonEq;
 pub trait With: Send + Sync {
     fn with(&self, req: &Request<String>) -> Result<bool, BoxError>;
 
-    fn print_pretty<'w>(&'w self) -> WithPrint<'w>;
+    fn print_pretty(&self) -> WithPrint<'_>;
 }
 
 #[derive(Debug)]
@@ -21,7 +21,7 @@ impl With for DefaultWith {
         Ok(true)
     }
 
-    fn print_pretty<'w>(&'w self) -> WithPrint<'w> {
+    fn print_pretty(&self) -> WithPrint<'_> {
         let name = "default case".into();
         let body = None;
 
@@ -39,7 +39,7 @@ where
         (self)(req).map(Into::into).map_err(Into::into)
     }
 
-    fn print_pretty<'w>(&'w self) -> WithPrint<'w> {
+    fn print_pretty(&self) -> WithPrint<'_> {
         fn type_name_of_val<T: Any>(_val: &T) -> &'static str {
             std::any::type_name::<T>()
         }
@@ -183,7 +183,7 @@ impl With for WithHandler {
         Ok(true)
     }
 
-    fn print_pretty<'w>(&'w self) -> WithPrint<'w> {
+    fn print_pretty(&self) -> WithPrint<'_> {
         let name = "WithHandler".into();
         let mut print_body = Vec::new();
 
@@ -196,7 +196,7 @@ impl With for WithHandler {
         }
 
         if let Some(headers) = &self.headers {
-            print_body.push(format!("headers:"));
+            print_body.push("headers:".to_string());
             for (key, value) in headers {
                 let value = if let Ok(value) = value.to_str() {
                     value.into()

@@ -128,7 +128,7 @@ impl InnerConnector {
                 }
             }
 
-            println!("");
+            println!();
         }
         Err(Error::NotFound(req))
     }
