@@ -1,3 +1,5 @@
+use colored::Colorize;
+use hyper::{service::Service, Request, Uri};
 use std::{
     future::{ready, Ready},
     io,
@@ -6,11 +8,9 @@ use std::{
     task::{Context, Poll},
 };
 
-use hyper::{service::Service, Request, Uri};
-
 use crate::{
-    builder::Builder, error::BoxError, handler::WithResult, response::ResponseFuture,
-    stream::MockStream, Case, Error, Level,
+    builder::Builder, error::BoxError, response::ResponseFuture, stream::MockStream, Case, Error,
+    Level,
 };
 
 /// Mock connector for [`hyper::Client`]
@@ -70,27 +70,65 @@ impl InnerConnector {
     ) -> Result<ResponseFuture, Error> {
         let req = into_request(req, body, uri)?;
 
-        let mut reasons = Vec::new();
-
         for case in self.cases.iter() {
-            let res = case.with.with(&req)?;
-            match res {
-                WithResult::Match => {
-                    case.seen.fetch_add(1, Ordering::Release);
-                    return Ok(case.returning.returning(req));
-                }
-                WithResult::Mismatch(new_reasons) => {
-                    reasons.extend(new_reasons);
-                }
+            if case.with.with(&req)? {
+                case.seen.fetch_add(1, Ordering::Release);
+                return Ok(case.returning.returning(req));
             }
         }
 
         // Couldn't find a match, log the error
         if self.level >= Level::Missing {
-            for reason in reasons {
-                // TODO: pretty reports
-                println!("{:?}", reason);
+            let req_note = " = ".red().bold();
+            let req_bar = " | ".red().bold();
+            let case_note = " = ".blue().bold();
+            let case_bar = " | ".blue().bold();
+
+            println!("{}", "--> no matching case for request".red().bold());
+            println!("{req_bar}");
+            println!("{req_note}the incoming request did not match any know cases.");
+            println!("{req_note}incoming request:");
+            println!("{req_bar}");
+            println!("{req_bar}{}:  `{}`", "method".bold(), req.method());
+            println!("{req_bar}{}:     `{}`", "uri".bold(), req.uri());
+            if !req.headers().is_empty() {
+                println!("{req_bar}{}:", "headers".bold());
+                for (key, value) in req.headers() {
+                    let value = if let Ok(value) = value.to_str() {
+                        value.into()
+                    } else {
+                        format!("{value:?}")
+                    };
+                    println!("{req_bar}  {key}: {value}");
+                }
             }
+            println!("{req_bar}");
+
+            if !req.body().is_empty() {
+                println!("{req_bar}{}:", "body".bold());
+                for line in req.body().split('\n') {
+                    println!("{req_bar}{line}");
+                }
+            }
+
+            for (id, case) in self.cases.iter().enumerate() {
+                let with_print = case.with.print_pretty();
+                println!(
+                    "{}",
+                    format!("{case_note}case {id} `{}`", with_print.name)
+                        .blue()
+                        .bold(),
+                );
+                if let Some(body) = with_print.body {
+                    println!("{case_bar}");
+                    for line in body.split('\n') {
+                        println!("{case_bar}{line}");
+                    }
+                    println!("{case_bar}");
+                }
+            }
+
+            println!("");
         }
         Err(Error::NotFound(req))
     }

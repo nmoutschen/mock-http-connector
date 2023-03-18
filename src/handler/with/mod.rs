@@ -1,70 +1,58 @@
 use crate::{error::BoxError, Error};
 use hyper::{header::IntoHeaderName, http::HeaderValue, HeaderMap, Method, Request, Uri};
-use std::error::Error as StdError;
+use std::{any::Any, borrow::Cow, error::Error as StdError};
 
 #[cfg(feature = "json")]
 mod json;
 #[cfg(feature = "json")]
 use json::JsonEq;
 
-mod reason;
-pub use reason::Reason;
-
 pub trait With: Send + Sync {
-    fn with<'w>(&'w self, req: &Request<String>) -> Result<WithResult<'w>, BoxError>;
-}
+    fn with(&self, req: &Request<String>) -> Result<bool, BoxError>;
 
-/// Result of the [`With`] method
-///
-/// This returns whether or not the underlying case matches the incoming request
-/// or not. If it doesn't match, it can contain a series of [`Reason`]s why.
-#[derive(Debug, Clone)]
-pub enum WithResult<'w> {
-    /// The [`Request`] matches the requirements of this implementor
-    Match,
-    /// The [`Request`] doesn't match the requirements of this implementor
-    ///
-    /// It may contain a series of [`Reason`]s for troubleshooting
-    Mismatch(Vec<Reason<'w>>),
-}
-
-impl<'w> From<Vec<Reason<'w>>> for WithResult<'w> {
-    fn from(value: Vec<Reason<'w>>) -> Self {
-        if value.is_empty() {
-            Self::Match
-        } else {
-            Self::Mismatch(value)
-        }
-    }
-}
-
-impl<'w> From<bool> for WithResult<'w> {
-    fn from(value: bool) -> Self {
-        match value {
-            true => Self::Match,
-            false => Self::Mismatch(Vec::default()),
-        }
-    }
+    fn print_pretty<'w>(&'w self) -> WithPrint<'w>;
 }
 
 #[derive(Debug)]
 pub struct DefaultWith;
 
 impl With for DefaultWith {
-    fn with<'w>(&'w self, _req: &Request<String>) -> Result<WithResult<'w>, BoxError> {
-        Ok(WithResult::Match)
+    fn with(&self, _req: &Request<String>) -> Result<bool, BoxError> {
+        Ok(true)
+    }
+
+    fn print_pretty<'w>(&'w self) -> WithPrint<'w> {
+        let name = "default case".into();
+        let body = None;
+
+        WithPrint { name, body }
     }
 }
 
 impl<F, E, R> With for F
 where
-    for<'r> F: Fn(&'r Request<String>) -> Result<R, E> + Send + Sync,
-    R: Into<WithResult<'static>> + Send + Sync + 'static,
+    F: Fn(&Request<String>) -> Result<R, E> + Any + Send + Sync,
+    R: Into<bool> + Send + Sync + 'static,
     E: StdError + Send + Sync + 'static,
 {
-    fn with<'s>(&'s self, req: &Request<String>) -> Result<WithResult<'s>, BoxError> {
+    fn with(&self, req: &Request<String>) -> Result<bool, BoxError> {
         (self)(req).map(Into::into).map_err(Into::into)
     }
+
+    fn print_pretty<'w>(&'w self) -> WithPrint<'w> {
+        fn type_name_of_val<T: Any>(_val: &T) -> &'static str {
+            std::any::type_name::<T>()
+        }
+
+        let name = format!("closure {}", type_name_of_val(self)).into();
+
+        WithPrint { name, body: None }
+    }
+}
+
+pub struct WithPrint<'w> {
+    pub name: Cow<'w, str>,
+    pub body: Option<Cow<'w, str>>,
 }
 
 #[derive(Default, Debug)]
@@ -142,18 +130,16 @@ impl WithHandler {
 }
 
 impl With for WithHandler {
-    fn with(&self, req: &Request<String>) -> Result<WithResult, BoxError> {
-        let mut reasons = Vec::new();
-
-        if let Some(uri) = &self.uri {
-            if uri != req.uri() {
-                reasons.push(Reason::uri(uri, None));
+    fn with(&self, req: &Request<String>) -> Result<bool, BoxError> {
+        if let Some(method) = &self.method {
+            if method != req.method() {
+                return Ok(false);
             }
         }
 
-        if let Some(method) = &self.method {
-            if method != req.method() {
-                reasons.push(Reason::method(method));
+        if let Some(uri) = &self.uri {
+            if uri != req.uri() {
+                return Ok(false);
             }
         }
 
@@ -166,7 +152,7 @@ impl With for WithHandler {
                     .map(|rv| value == rv)
                     .unwrap_or(false)
                 {
-                    reasons.push(Reason::header(key, value, None));
+                    return Ok(false);
                 }
             }
         }
@@ -174,27 +160,70 @@ impl With for WithHandler {
         match &self.body {
             Some(Body::String(body)) => {
                 if body != req.body() {
-                    reasons.push(Reason::body(None));
+                    return Ok(false);
                 }
             }
             Some(Body::Json(body)) => {
                 let payload: serde_json::Value = serde_json::from_str(req.body())?;
 
                 if body != &payload {
-                    reasons.push(Reason::body(None));
+                    return Ok(false);
                 }
             }
             Some(Body::JsonPartial(body)) => {
                 let payload: serde_json::Value = serde_json::from_str(req.body())?;
 
                 if !body.json_eq(&payload) {
-                    reasons.push(Reason::body(None));
+                    return Ok(false);
                 }
             }
             None => (),
         }
 
-        Ok(reasons.into())
+        Ok(true)
+    }
+
+    fn print_pretty<'w>(&'w self) -> WithPrint<'w> {
+        let name = "WithHandler".into();
+        let mut print_body = Vec::new();
+
+        if let Some(method) = &self.method {
+            print_body.push(format!("method:  `{method}`"));
+        }
+
+        if let Some(uri) = &self.uri {
+            print_body.push(format!("uri:     `{uri}`"));
+        }
+
+        if let Some(headers) = &self.headers {
+            print_body.push(format!("headers:"));
+            for (key, value) in headers {
+                let value = if let Ok(value) = value.to_str() {
+                    value.into()
+                } else {
+                    format!("{value:?}")
+                };
+                print_body.push(format!("  {key}: {value}"));
+            }
+        }
+
+        match &self.body {
+            Some(Body::Json(body)) => {
+                print_body.push(format!("full json match:\n{body:#}"));
+            }
+            Some(Body::JsonPartial(body)) => {
+                print_body.push(format!("partial json match:\n{body:#}"));
+            }
+            Some(Body::String(body)) => {
+                print_body.push(format!("body:\n{body}"));
+            }
+            None => (),
+        }
+
+        WithPrint {
+            name,
+            body: Some(print_body.join("\n").into()),
+        }
     }
 }
 

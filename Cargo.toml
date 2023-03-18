@@ -17,6 +17,7 @@ default = ["json"]
 json = ["dep:serde_json", "dep:serde"]
 
 [dependencies]
+colored = "2.0.0"
 httparse = "1.8.0"
 hyper = { version = "0.14.24", features = ["client", "http1"] }
 paste = "1.0.11"
