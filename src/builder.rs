@@ -2,7 +2,7 @@ use crate::{
     case::Case,
     connector::InnerConnector,
     handler::{DefaultWith, Returning, With, WithHandler},
-    Connector, Error, Level,
+    Connector, Error, Level, Report,
 };
 use hyper::{header::IntoHeaderName, http::HeaderValue, Method, Request, Uri};
 use std::error::Error as StdError;
@@ -84,9 +84,10 @@ impl<'c> CaseBuilder<'c> {
     /// # Ok::<_, Error>(())
     /// # };
     /// ```
-    pub fn with<W, E>(self, with: W) -> CaseBuilder<'c, W>
+    pub fn with<W, E, R>(self, with: W) -> CaseBuilder<'c, W>
     where
-        for<'r> W: Fn(&'r Request<String>) -> Result<bool, E>,
+        for<'r> W: Fn(&'r Request<String>) -> Result<R, E>,
+        R: Into<Report>,
         E: StdError + Send + Sync + 'static,
     {
         CaseBuilder {

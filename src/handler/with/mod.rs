@@ -1,27 +1,36 @@
 use crate::{error::BoxError, Error};
+use colored::Colorize;
 use hyper::{header::IntoHeaderName, http::HeaderValue, HeaderMap, Method, Request, Uri};
-use std::{any::Any, borrow::Cow, error::Error as StdError};
+use std::{
+    any::Any,
+    borrow::Cow,
+    cmp::{max, min},
+    collections::HashSet,
+    error::Error as StdError,
+};
 
 #[cfg(feature = "json")]
 mod json;
 #[cfg(feature = "json")]
 use json::JsonEq;
+mod report;
+pub use report::{Reason, Report};
 
 pub trait With: Send + Sync {
-    fn with(&self, req: &Request<String>) -> Result<bool, BoxError>;
+    fn with(&self, req: &Request<String>) -> Result<Report, BoxError>;
 
-    fn print_pretty(&self) -> WithPrint<'_>;
+    fn print_pretty(&self, report: &HashSet<Reason>) -> WithPrint<'_>;
 }
 
 #[derive(Debug)]
 pub struct DefaultWith;
 
 impl With for DefaultWith {
-    fn with(&self, _req: &Request<String>) -> Result<bool, BoxError> {
-        Ok(true)
+    fn with(&self, _req: &Request<String>) -> Result<Report, BoxError> {
+        Ok(Report::Match)
     }
 
-    fn print_pretty(&self) -> WithPrint<'_> {
+    fn print_pretty(&self, _report: &HashSet<Reason>) -> WithPrint<'_> {
         let name = "default case".into();
         let body = None;
 
@@ -32,14 +41,14 @@ impl With for DefaultWith {
 impl<F, E, R> With for F
 where
     F: Fn(&Request<String>) -> Result<R, E> + Any + Send + Sync,
-    R: Into<bool> + Send + Sync + 'static,
+    R: Into<Report> + Send + Sync + 'static,
     E: StdError + Send + Sync + 'static,
 {
-    fn with(&self, req: &Request<String>) -> Result<bool, BoxError> {
+    fn with(&self, req: &Request<String>) -> Result<Report, BoxError> {
         (self)(req).map(Into::into).map_err(Into::into)
     }
 
-    fn print_pretty(&self) -> WithPrint<'_> {
+    fn print_pretty(&self, _report: &HashSet<Reason>) -> WithPrint<'_> {
         fn type_name_of_val<T: Any>(_val: &T) -> &'static str {
             std::any::type_name::<T>()
         }
@@ -130,16 +139,18 @@ impl WithHandler {
 }
 
 impl With for WithHandler {
-    fn with(&self, req: &Request<String>) -> Result<bool, BoxError> {
+    fn with(&self, req: &Request<String>) -> Result<Report, BoxError> {
+        let mut reasons = Vec::new();
+
         if let Some(method) = &self.method {
             if method != req.method() {
-                return Ok(false);
+                reasons.push(Reason::Method);
             }
         }
 
         if let Some(uri) = &self.uri {
             if uri != req.uri() {
-                return Ok(false);
+                reasons.push(Reason::Uri);
             }
         }
 
@@ -152,7 +163,7 @@ impl With for WithHandler {
                     .map(|rv| value == rv)
                     .unwrap_or(false)
                 {
-                    return Ok(false);
+                    reasons.push(Reason::Header(key.clone()));
                 }
             }
         }
@@ -160,42 +171,60 @@ impl With for WithHandler {
         match &self.body {
             Some(Body::String(body)) => {
                 if body != req.body() {
-                    return Ok(false);
+                    reasons.push(Reason::Body);
                 }
             }
             Some(Body::Json(body)) => {
                 let payload: serde_json::Value = serde_json::from_str(req.body())?;
 
                 if body != &payload {
-                    return Ok(false);
+                    reasons.push(Reason::Body);
                 }
             }
             Some(Body::JsonPartial(body)) => {
                 let payload: serde_json::Value = serde_json::from_str(req.body())?;
 
                 if !body.json_eq(&payload) {
-                    return Ok(false);
+                    reasons.push(Reason::Body);
                 }
             }
             None => (),
         }
 
-        Ok(true)
+        Ok(reasons.into())
     }
 
-    fn print_pretty(&self) -> WithPrint<'_> {
+    fn print_pretty(&self, report: &HashSet<Reason>) -> WithPrint<'_> {
         let name = "WithHandler".into();
         let mut print_body = Vec::new();
 
         if let Some(method) = &self.method {
-            print_body.push(format!("method:  `{method}`"));
+            print_body.push(format!("method:   {method}"));
+            if report.contains(&Reason::Method) {
+                print_body.push(
+                    format!("          {:^<1$}", "", method.to_string().len())
+                        .yellow()
+                        .to_string(),
+                );
+            }
         }
 
         if let Some(uri) = &self.uri {
-            print_body.push(format!("uri:     `{uri}`"));
+            print_body.push(format!("uri:      {uri}"));
+            if report.contains(&Reason::Uri) {
+                print_body.push(
+                    format!("          {:^<1$}", "", uri.to_string().len())
+                        .yellow()
+                        .to_string(),
+                );
+            }
         }
 
         if let Some(headers) = &self.headers {
+            let key_length = headers
+                .iter()
+                .fold(0, |acc, (key, _)| max(acc, key.to_string().len()));
+
             print_body.push("headers:".to_string());
             for (key, value) in headers {
                 let value = if let Ok(value) = value.to_str() {
@@ -203,19 +232,61 @@ impl With for WithHandler {
                 } else {
                     format!("{value:?}")
                 };
-                print_body.push(format!("  {key}: {value}"));
+
+                print_body.push(format!("  {key: <key_length$}: {value}"));
+                if report.contains(&Reason::Header(key.clone())) {
+                    print_body.push(format!(
+                        "  {: <1$}{2}",
+                        "",
+                        key_length + 2,
+                        format!("{:^<1$}", "", value.len()).yellow()
+                    ))
+                }
             }
         }
 
         match &self.body {
             Some(Body::Json(body)) => {
-                print_body.push(format!("full json match:\n{body:#}"));
+                print_body.push(format!("full json match:"));
+                let body = format!("{body:#}");
+                let mut body_length = 0;
+                for line in body.trim().split('\n') {
+                    body_length = max(body_length, line.len());
+                    print_body.push(format!("{} {line}", ">".yellow()));
+                }
+                print_body.push(
+                    format!("  {:^<1$}", "", min(74, body_length))
+                        .yellow()
+                        .to_string(),
+                );
             }
             Some(Body::JsonPartial(body)) => {
-                print_body.push(format!("partial json match:\n{body:#}"));
+                print_body.push(format!("partial json match:"));
+                let body = format!("{body:#}");
+                let mut body_length = 0;
+                for line in body.trim().split('\n') {
+                    body_length = max(body_length, line.len());
+                    print_body.push(format!("{} {line}", ">".yellow()));
+                }
+                print_body.push(
+                    format!("  {:^<1$}", "", min(74, body_length))
+                        .yellow()
+                        .to_string(),
+                );
             }
             Some(Body::String(body)) => {
-                print_body.push(format!("body:\n{body}"));
+                print_body.push(format!("body:"));
+                let body = format!("{body:#}");
+                let mut body_length = 0;
+                for line in body.trim().split('\n') {
+                    body_length = max(body_length, line.len());
+                    print_body.push(format!("{} {line}", ">".yellow()));
+                }
+                print_body.push(
+                    format!("  {:^<1$}", "", min(74, body_length))
+                        .yellow()
+                        .to_string(),
+                );
             }
             None => (),
         }

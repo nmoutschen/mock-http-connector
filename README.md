@@ -36,3 +36,54 @@ connector.checkpoint()?;
 # Ok::<_, Error>(())
 # });
 ```
+
+## Reporting
+
+In case a Request does not match any of the cases defined in the mock connector, this crate can
+print a report showing why each case didn't match.
+
+For example:
+
+```ignore
+--> no matching case for request
+ | 
+ = the incoming request did not match any know cases.
+ = incoming request:
+ | 
+ | method:   GET
+ | uri:      http://test.example/
+ | headers:
+ |   authorization: bearer 1234
+ |   host         : test.example
+ | 
+--> case 0 `WithHandler`
+ | 
+ | method:   POST
+ |           ^^^^
+ | uri:      http://test.example/
+ | headers:
+ |   authorization: bearer 1234
+ |   content-type : application/json
+ |                  ^^^^^^^^^^^^^^^^
+ | body:
+ | > some multi-line payload
+ | > on 2 lines
+ |   ^^^^^^^^^^^^^^^^^^^^^^^
+ | 
+ = this case doesn't match the request on the following attributes:
+ | - method
+ | - body
+ | - header `content-type`
+ | 
+--> case 1 `WithHandler`
+ | 
+ | method:   GET
+ | uri:      http://test.example/some-path
+ |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ | headers:
+ |   authorization: bearer 1234
+ | 
+ = this case doesn't match the request on the following attributes:
+ | - uri
+ | 
+```
