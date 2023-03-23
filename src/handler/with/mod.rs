@@ -19,6 +19,7 @@ pub use report::{Reason, Report};
 pub trait With: Send + Sync {
     fn with(&self, req: &Request<String>) -> Result<Report, BoxError>;
 
+    #[allow(clippy::mutable_key_type)]
     fn print_pretty(&self, report: &HashSet<Reason>) -> WithPrint<'_>;
 }
 
@@ -247,7 +248,7 @@ impl With for WithHandler {
 
         match &self.body {
             Some(Body::Json(body)) => {
-                print_body.push(format!("full json match:"));
+                print_body.push("full json match:".to_string());
                 let body = format!("{body:#}");
                 let mut body_length = 0;
                 for line in body.trim().split('\n') {
@@ -261,7 +262,7 @@ impl With for WithHandler {
                 );
             }
             Some(Body::JsonPartial(body)) => {
-                print_body.push(format!("partial json match:"));
+                print_body.push("partial json match:".to_string());
                 let body = format!("{body:#}");
                 let mut body_length = 0;
                 for line in body.trim().split('\n') {
@@ -275,7 +276,7 @@ impl With for WithHandler {
                 );
             }
             Some(Body::String(body)) => {
-                print_body.push(format!("body:"));
+                print_body.push("body:".to_string());
                 let body = format!("{body:#}");
                 let mut body_length = 0;
                 for line in body.trim().split('\n') {

@@ -40,6 +40,7 @@ impl From<Option<Reason>> for Report {
         match value {
             None => Self::Match,
             Some(reason) => {
+                #[allow(clippy::mutable_key_type)]
                 let mut reasons = HashSet::new();
                 reasons.insert(reason);
                 Self::Mismatch(reasons)
