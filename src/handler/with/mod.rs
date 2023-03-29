@@ -1,6 +1,10 @@
 use crate::{error::BoxError, Error};
 use colored::Colorize;
-use hyper::{header::IntoHeaderName, http::HeaderValue, HeaderMap, Method, Request, Uri};
+use hyper::{
+    http::{HeaderName, HeaderValue},
+    HeaderMap, Method, Request, Uri,
+};
+use itertools::Itertools;
 use std::{
     any::Any,
     borrow::Cow,
@@ -69,7 +73,7 @@ pub struct WithPrint<'w> {
 pub struct WithHandler {
     uri: Option<Uri>,
     method: Option<Method>,
-    headers: Option<HeaderMap<HeaderValue>>,
+    headers: Vec<(HeaderName, HeaderCheck)>,
     body: Option<Body>,
 }
 
@@ -94,20 +98,52 @@ impl WithHandler {
 
     pub fn with_header<K, V>(mut self, key: K, value: V) -> Result<Self, Error>
     where
-        K: IntoHeaderName,
+        K: TryInto<HeaderName>,
+        K::Error: Into<hyper::http::Error>,
         V: TryInto<HeaderValue>,
         V::Error: Into<hyper::http::Error>,
     {
-        match &mut self.headers {
-            Some(headers) => {
-                headers.insert(key, value.try_into().map_err(Into::into)?);
-            }
-            maybe_headers @ None => {
-                let mut headers = HeaderMap::new();
-                headers.insert(key, value.try_into().map_err(Into::into)?);
-                *maybe_headers = Some(headers);
-            }
-        }
+        self.headers.push((
+            key.try_into().map_err(Into::into)?,
+            HeaderCheck::AtLeastOnce(value.try_into().map_err(Into::into)?),
+        ));
+
+        Ok(self)
+    }
+
+    pub fn with_header_once<K, V>(mut self, key: K, value: V) -> Result<Self, Error>
+    where
+        K: TryInto<HeaderName>,
+        K::Error: Into<hyper::http::Error>,
+        V: TryInto<HeaderValue>,
+        V::Error: Into<hyper::http::Error>,
+    {
+        self.headers.push((
+            key.try_into().map_err(Into::into)?,
+            HeaderCheck::ExactlyOnce(value.try_into().map_err(Into::into)?),
+        ));
+
+        Ok(self)
+    }
+
+    pub fn with_header_all<K, IV, V>(mut self, key: K, values: IV) -> Result<Self, Error>
+    where
+        K: TryInto<HeaderName>,
+        K::Error: Into<hyper::http::Error>,
+        IV: IntoIterator<Item = V>,
+        V: TryInto<HeaderValue>,
+        V::Error: Into<hyper::http::Error>,
+    {
+        self.headers.push((
+            key.try_into().map_err(Into::into)?,
+            HeaderCheck::All(
+                values
+                    .into_iter()
+                    .map(|value| value.try_into())
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(Into::into)?,
+            ),
+        ));
 
         Ok(self)
     }
@@ -155,17 +191,9 @@ impl With for WithHandler {
             }
         }
 
-        if let Some(headers) = &self.headers {
-            for (key, value) in headers {
-                // If the value is not equal or not present
-                if !req
-                    .headers()
-                    .get(key)
-                    .map(|rv| value == rv)
-                    .unwrap_or(false)
-                {
-                    reasons.push(Reason::Header(key.clone()));
-                }
+        for (key, value) in &self.headers {
+            if !check_headers(req.headers(), key, value) {
+                reasons.push(Reason::Header(key.clone()));
             }
         }
 
@@ -221,27 +249,36 @@ impl With for WithHandler {
             }
         }
 
-        if let Some(headers) = &self.headers {
-            let key_length = headers
+        if !self.headers.is_empty() {
+            let key_length = self
+                .headers
                 .iter()
                 .fold(0, |acc, (key, _)| max(acc, key.to_string().len()));
 
             print_body.push("headers:".to_string());
-            for (key, value) in headers {
-                let value = if let Ok(value) = value.to_str() {
-                    value.into()
-                } else {
-                    format!("{value:?}")
+            for (key, value) in &self.headers {
+                let values = match value {
+                    HeaderCheck::AtLeastOnce(value) => vec![value],
+                    HeaderCheck::ExactlyOnce(value) => vec![value],
+                    HeaderCheck::All(values) => values.iter().collect(),
                 };
 
-                print_body.push(format!("  {key: <key_length$}: {value}"));
-                if report.contains(&Reason::Header(key.clone())) {
-                    print_body.push(format!(
-                        "  {: <1$}{2}",
-                        "",
-                        key_length + 2,
-                        format!("{:^<1$}", "", value.len()).yellow()
-                    ))
+                for value in values {
+                    let value = if let Ok(value) = value.to_str() {
+                        value.into()
+                    } else {
+                        format!("{value:?}")
+                    };
+
+                    print_body.push(format!("  {key: <key_length$}: {value}"));
+                    if report.contains(&Reason::Header(key.clone())) {
+                        print_body.push(format!(
+                            "  {: <1$}{2}",
+                            "",
+                            key_length + 2,
+                            format!("{:^<1$}", "", value.len()).yellow()
+                        ))
+                    }
                 }
             }
         }
@@ -308,6 +345,39 @@ pub enum Body {
     JsonPartial(serde_json::Value),
 }
 
+/// Type of check to perform on headers
+///
+/// An HTTP request can have multiple entries with the same [`HeaderName`]
+#[derive(Debug, Clone)]
+pub enum HeaderCheck {
+    /// At least one entry correspond to the pattern
+    AtLeastOnce(HeaderValue),
+    /// There is only one key corresponding to the pattern
+    ExactlyOnce(HeaderValue),
+    /// All entries correspond to the pattern
+    All(Vec<HeaderValue>),
+}
+
+/// Check headers against key-value pair
+fn check_headers(
+    req_headers: &HeaderMap<HeaderValue>,
+    key: &HeaderName,
+    value: &HeaderCheck,
+) -> bool {
+    let mut req_values = req_headers.get_all(key).into_iter();
+
+    let found = match value {
+        HeaderCheck::AtLeastOnce(value) => req_values.any(|rv| value == rv),
+        HeaderCheck::ExactlyOnce(value) => {
+            req_values.fold((0, false), |(count, state), rv| {
+                (count + 1, state || value == rv)
+            }) == (1, true)
+        }
+        HeaderCheck::All(values) => req_values.sorted().eq(values.iter().sorted()),
+    };
+    found
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -356,7 +426,8 @@ mod tests {
     #[case("authorization", "Bearer 1234")]
     fn with_handler_header<K, V>(#[case] key: K, #[case] value: V)
     where
-        K: IntoHeaderName,
+        K: TryInto<HeaderName>,
+        K::Error: Into<hyper::http::Error>,
         V: TryInto<HeaderValue>,
         V::Error: Into<hyper::http::Error>,
     {
@@ -364,7 +435,7 @@ mod tests {
         assert_that!(with.with_header(key, value))
             .is_ok()
             .map(|w| &w.headers)
-            .is_some();
+            .has_length(1);
     }
 
     #[rstest]
@@ -397,5 +468,36 @@ mod tests {
             .map(|w| &w.body)
             .is_some()
             .matches(|b| matches!(b, Body::Json(..)));
+    }
+
+    #[rstest]
+    #[case(hyper::header::AUTHORIZATION, HeaderCheck::AtLeastOnce("bearer 123".try_into().unwrap()), true)]
+    #[case(hyper::header::AUTHORIZATION, HeaderCheck::AtLeastOnce("bearer 1234".try_into().unwrap()), true)]
+    #[case(hyper::header::AUTHORIZATION, HeaderCheck::ExactlyOnce("bearer 123".try_into().unwrap()), false)]
+    #[case(hyper::header::AUTHORIZATION, HeaderCheck::ExactlyOnce("bearer 1234".try_into().unwrap()), false)]
+    #[case(hyper::header::AUTHORIZATION, HeaderCheck::All(vec!["bearer 123".try_into().unwrap()]), false)]
+    #[case(hyper::header::AUTHORIZATION, HeaderCheck::All(vec!["bearer 1234".try_into().unwrap()]), false)]
+    #[case(hyper::header::AUTHORIZATION, HeaderCheck::All(vec!["bearer 123".try_into().unwrap(), "bearer 1234".try_into().unwrap()]), true)]
+    #[case(hyper::header::AUTHORIZATION, HeaderCheck::All(vec!["bearer 1234".try_into().unwrap(), "bearer 123".try_into().unwrap()]), true)]
+    fn test_check_headers(
+        #[case] key: HeaderName,
+        #[case] value: HeaderCheck,
+        #[case] expected: bool,
+    ) {
+        let mut headers = HeaderMap::new();
+        headers.append(
+            hyper::header::AUTHORIZATION,
+            "bearer 123".try_into().unwrap(),
+        );
+        headers.append(
+            hyper::header::AUTHORIZATION,
+            "bearer 1234".try_into().unwrap(),
+        );
+        headers.append(
+            hyper::header::CONTENT_TYPE,
+            "application/json".try_into().unwrap(),
+        );
+
+        assert_that!(check_headers(&headers, &key, &value)).is_equal_to(expected);
     }
 }
