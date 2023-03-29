@@ -4,7 +4,10 @@ use crate::{
     handler::{DefaultWith, Returning, With, WithHandler},
     Connector, Error, Level, Report,
 };
-use hyper::{header::IntoHeaderName, http::HeaderValue, Method, Request, Uri};
+use hyper::{
+    http::{HeaderName, HeaderValue},
+    Method, Request, Uri,
+};
 use std::error::Error as StdError;
 
 /// Builder for [`Connector`]
@@ -163,6 +166,10 @@ impl<'c> CaseBuilder<'c> {
 
     /// Match requests that contains the specific header
     ///
+    /// An HTTP request can contain multiple headers with the same key, but different values. This
+    /// checks that there is at least one value matching. If you want to ensure that there is only
+    /// one entry for this key, consider using `with_header_once`.
+    ///
     /// ## Example
     ///
     /// ```rust
@@ -183,13 +190,95 @@ impl<'c> CaseBuilder<'c> {
     /// You can combine this with other validators, such as `with_uri`, but not with `with`.
     pub fn with_header<K, V>(self, key: K, value: V) -> CaseBuilder<'c, WithHandler>
     where
-        K: IntoHeaderName,
+        K: TryInto<HeaderName>,
+        K::Error: Into<hyper::http::Error>,
         V: TryInto<HeaderValue>,
         V::Error: Into<hyper::http::Error>,
     {
         CaseBuilder {
             connector: self.connector,
             with: WithHandler::default().with_header(key, value),
+            count: self.count,
+        }
+    }
+
+    /// Match requests that contains the specific header
+    ///
+    /// An HTTP request can contain multiple headers with the same key, but different values. This
+    /// checks that there is only one value for the given header.
+    ///
+    /// ## Example
+    ///
+    /// ```rust
+    /// # use hyper::Response;
+    /// # use mock_http_connector::{Connector, Error};
+    /// # || {
+    /// let mut builder = Connector::builder();
+    /// builder
+    ///     .expect()
+    ///     .with_header_once("content-type", "application/json")
+    ///     .returning("OK")?;
+    /// # Ok::<_, Error>(())
+    /// # };
+    /// ```
+    ///
+    /// ## Remark
+    ///
+    /// You can combine this with other validators, such as `with_uri`, but not with `with`.
+    pub fn with_header_once<K, V>(self, key: K, value: V) -> CaseBuilder<'c, WithHandler>
+    where
+        K: TryInto<HeaderName>,
+        K::Error: Into<hyper::http::Error>,
+        V: TryInto<HeaderValue>,
+        V::Error: Into<hyper::http::Error>,
+    {
+        CaseBuilder {
+            connector: self.connector,
+            with: WithHandler::default().with_header_once(key, value),
+            count: self.count,
+        }
+    }
+
+    /// Match requests that contains the specific header
+    ///
+    /// An HTTP request can contain multiple headers with the same key, but different values. This
+    /// checks that all entries correspond to the given set of values.
+    ///
+    /// If you want to check that a header name has multiple values, but do not mind if there are
+    /// additional values, you can use `with_header` multiple times instead.
+    ///
+    /// If you want to ensure that a header name only has one value, you can use `with_header_once`
+    /// instead.
+    ///
+    /// ## Example
+    ///
+    /// ```rust
+    /// # use hyper::Response;
+    /// # use mock_http_connector::{Connector, Error};
+    /// # || {
+    /// let mut builder = Connector::builder();
+    /// builder
+    ///     .expect()
+    ///     .with_header_all("content-type", ["application/json", "text/html"])
+    ///     .returning("OK")?;
+    /// # Ok::<_, Error>(())
+    /// # };
+    /// ```
+    ///
+    /// ## Remark
+    ///
+    /// You can combine this with other validators, such as `with_uri`, but not with `with`.
+    pub fn with_header_all<K, IV, V>(self, key: K, values: IV) -> CaseBuilder<'c, WithHandler>
+    where
+        K: TryInto<HeaderName>,
+        K::Error: Into<hyper::http::Error>,
+        IV: IntoIterator<Item = V>,
+        V: TryInto<HeaderValue>,
+        V::Error: Into<hyper::http::Error>,
+    {
+        CaseBuilder {
+            connector: self.connector,
+            with: WithHandler::default().with_header_all(key, values),
             count: self.count,
         }
     }
@@ -302,11 +391,37 @@ impl<'c> CaseBuilder<'c, WithHandler> {
     #[doc(hidden)]
     pub fn with_header<K, V>(mut self, key: K, value: V) -> Self
     where
-        K: IntoHeaderName,
+        K: TryInto<HeaderName>,
+        K::Error: Into<hyper::http::Error>,
         V: TryInto<HeaderValue>,
         V::Error: Into<hyper::http::Error>,
     {
         self.with = self.with.and_then(|w| w.with_header(key, value));
+        self
+    }
+
+    #[doc(hidden)]
+    pub fn with_header_once<K, V>(mut self, key: K, value: V) -> Self
+    where
+        K: TryInto<HeaderName>,
+        K::Error: Into<hyper::http::Error>,
+        V: TryInto<HeaderValue>,
+        V::Error: Into<hyper::http::Error>,
+    {
+        self.with = self.with.and_then(|w| w.with_header_once(key, value));
+        self
+    }
+
+    #[doc(hidden)]
+    pub fn with_header_all<K, IV, V>(mut self, key: K, values: IV) -> Self
+    where
+        K: TryInto<HeaderName>,
+        K::Error: Into<hyper::http::Error>,
+        IV: IntoIterator<Item = V>,
+        V: TryInto<HeaderValue>,
+        V::Error: Into<hyper::http::Error>,
+    {
+        self.with = self.with.and_then(|w| w.with_header_all(key, values));
         self
     }
 

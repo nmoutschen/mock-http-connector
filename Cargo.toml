@@ -20,6 +20,7 @@ json = ["dep:serde_json", "dep:serde"]
 colored = "2.0.0"
 httparse = "1.8.0"
 hyper = { version = "0.14.24", features = ["client", "http1"] }
+itertools = "0.10.5"
 paste = "1.0.11"
 serde = { version = "1.0.152", optional = true }
 serde_json = { version = "1.0.93", optional = true }
