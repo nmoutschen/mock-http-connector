@@ -1,6 +1,8 @@
 use colored::Colorize;
 use hyper::{service::Service, Request, Uri};
 use std::{
+    cmp::max,
+    collections::{BinaryHeap, HashSet},
     future::{ready, Ready},
     io,
     str::from_utf8,
@@ -10,7 +12,7 @@ use std::{
 
 use crate::{
     builder::Builder, error::BoxError, response::ResponseFuture, stream::MockStream, Case, Error,
-    Level,
+    Level, Reason, Report,
 };
 
 /// Mock connector for [`hyper::Client`]
@@ -70,65 +72,23 @@ impl InnerConnector {
     ) -> Result<ResponseFuture, Error> {
         let req = into_request(req, body, uri)?;
 
+        let mut reports = Vec::new();
+
         for case in self.cases.iter() {
-            if case.with.with(&req)? {
-                case.seen.fetch_add(1, Ordering::Release);
-                return Ok(case.returning.returning(req));
+            match case.with.with(&req)? {
+                Report::Match => {
+                    case.seen.fetch_add(1, Ordering::Release);
+                    return Ok(case.returning.returning(req));
+                }
+                Report::Mismatch(reasons) => {
+                    reports.push((case, reasons));
+                }
             }
         }
 
         // Couldn't find a match, log the error
         if self.level >= Level::Missing {
-            let req_note = " = ".red().bold();
-            let req_bar = " | ".red().bold();
-            let case_note = " = ".blue().bold();
-            let case_bar = " | ".blue().bold();
-
-            println!("{}", "--> no matching case for request".red().bold());
-            println!("{req_bar}");
-            println!("{req_note}the incoming request did not match any know cases.");
-            println!("{req_note}incoming request:");
-            println!("{req_bar}");
-            println!("{req_bar}{}:  `{}`", "method".bold(), req.method());
-            println!("{req_bar}{}:     `{}`", "uri".bold(), req.uri());
-            if !req.headers().is_empty() {
-                println!("{req_bar}{}:", "headers".bold());
-                for (key, value) in req.headers() {
-                    let value = if let Ok(value) = value.to_str() {
-                        value.into()
-                    } else {
-                        format!("{value:?}")
-                    };
-                    println!("{req_bar}  {key}: {value}");
-                }
-            }
-            println!("{req_bar}");
-
-            if !req.body().is_empty() {
-                println!("{req_bar}{}:", "body".bold());
-                for line in req.body().split('\n') {
-                    println!("{req_bar}{line}");
-                }
-            }
-
-            for (id, case) in self.cases.iter().enumerate() {
-                let with_print = case.with.print_pretty();
-                println!(
-                    "{}",
-                    format!("{case_note}case {id} `{}`", with_print.name)
-                        .blue()
-                        .bold(),
-                );
-                if let Some(body) = with_print.body {
-                    println!("{case_bar}");
-                    for line in body.split('\n') {
-                        println!("{case_bar}{line}");
-                    }
-                    println!("{case_bar}");
-                }
-            }
-
-            println!();
+            print_report(&req, reports);
         }
         Err(Error::NotFound(req))
     }
@@ -173,4 +133,68 @@ fn into_request(
     }
 
     Ok(builder.body(body)?)
+}
+
+fn print_report(req: &Request<String>, reports: Vec<(&Case, HashSet<Reason>)>) {
+    let req_note = " = ".red().bold();
+    let req_bar = " | ".red().bold();
+    let case_note = " = ".blue().bold();
+    let case_bar = " | ".blue().bold();
+
+    println!("{}", "--> no matching case for request".red().bold());
+    println!("{req_bar}");
+    println!("{req_note}the incoming request did not match any know cases.");
+    println!("{req_note}incoming request:");
+    println!("{req_bar}");
+    println!("{req_bar}method:   {}", req.method());
+    println!("{req_bar}uri:      {}", req.uri());
+    if !req.headers().is_empty() {
+        let key_length = req
+            .headers()
+            .iter()
+            .fold(0, |acc, (key, _)| max(acc, key.to_string().len()));
+        println!("{req_bar}headers:");
+        for (key, value) in req.headers() {
+            let value = if let Ok(value) = value.to_str() {
+                value.into()
+            } else {
+                format!("{value:?}")
+            };
+            println!("{req_bar}  {key: <key_length$}: {value}");
+        }
+    }
+    println!("{req_bar}");
+
+    if !req.body().is_empty() {
+        println!("{req_bar}{}:", "body".bold());
+        for line in req.body().split('\n') {
+            println!("{req_bar}{line}");
+        }
+        println!("{req_bar}");
+    }
+
+    for (id, (case, report)) in reports.iter().enumerate() {
+        let with_print = case.with.print_pretty(report);
+        println!(
+            "{}",
+            format!("--> case {id} `{}`", with_print.name).blue().bold(),
+        );
+        if let Some(body) = with_print.body {
+            println!("{case_bar}");
+            for line in body.split('\n') {
+                println!("{case_bar}{line}");
+            }
+            println!("{case_bar}");
+        }
+        if !report.is_empty() {
+            let cases = report.iter().map(|r| r.as_str()).collect::<BinaryHeap<_>>();
+            println!("{case_note}this case doesn't match the request on the following attributes:");
+            for case in cases {
+                println!("{case_bar}- {case}");
+            }
+            println!("{case_bar}");
+        }
+    }
+
+    println!();
 }
