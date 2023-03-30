@@ -44,7 +44,7 @@ print a report showing why each case didn't match.
 
 For example:
 
-```ignore
+```text
 --> no matching case for request
  | 
  = the incoming request did not match any know cases.
