@@ -2,9 +2,7 @@
 name = "mock-http-connector"
 version = "0.3.1"
 edition = "2021"
-authors = [
-    "Nicolas Moutschen <nicolas.moutschen@gmail.com>"
-]
+authors = ["Nicolas Moutschen <nicolas.moutschen@gmail.com>"]
 description = "Mock hyper HTTPConnector"
 repository = "https://github.com/nmoutschen/mock-http-connector/"
 license = "MIT"
@@ -17,7 +15,7 @@ default = ["json"]
 json = ["dep:serde_json", "dep:serde"]
 
 [dependencies]
-colored = "2.0.0"
+colored = "2.0.4"
 httparse = "1.8.0"
 hyper = { version = "0.14.24", features = ["client", "http1"] }
 itertools = "0.10.5"
@@ -28,10 +26,19 @@ thiserror = "1.0.38"
 tokio = { version = "1.25.0", features = ["io-util"] }
 
 [dev-dependencies]
-hyper = { version = "0.14.24", features = ["client", "http1", "runtime", "stream"] }
+hyper = { version = "0.14.24", features = [
+    "client",
+    "http1",
+    "runtime",
+    "stream",
+] }
 rstest = "0.16.0"
 serde = { version = "1.0.152", features = ["derive"] }
 speculoos = "0.11.0"
-tokio = { version = "1.25.0", features = ["io-util", "macros", "rt-multi-thread"] }
+tokio = { version = "1.25.0", features = [
+    "io-util",
+    "macros",
+    "rt-multi-thread",
+] }
 tokio-stream = "0.1.14"
 tokio-test = "0.4.2"
