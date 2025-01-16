@@ -1,4 +1,6 @@
-use hyper::{
+#![cfg(feature = "hyper_0_14")]
+
+use hyper_0_14::{
     body::{Bytes, HttpBody},
     Body, Request,
 };
@@ -28,7 +30,7 @@ async fn test_body_stream() -> Result<(), Box<dyn StdError>> {
 
     let connector = builder.build();
 
-    let client = hyper::Client::builder().build::<_, Body>(connector.clone());
+    let client = hyper_0_14::Client::builder().build::<_, Body>(connector.clone());
     let stream = tokio_stream::iter(vec![Ok::<_, Infallible>("hello "), Ok("world!")]);
 
     // WHEN making a request that sends a stream of data
@@ -64,7 +66,7 @@ async fn test_stream() -> Result<(), Box<dyn StdError>> {
 
     let connector = builder.build();
 
-    let client = hyper::Client::builder().build::<_, CustomBody>(connector.clone());
+    let client = hyper_0_14::Client::builder().build::<_, CustomBody>(connector.clone());
     let body = CustomBody::new(["hello ", "world!"]);
 
     // WHEN making a request that sends a stream of data
@@ -114,7 +116,7 @@ impl HttpBody for CustomBody {
     fn poll_trailers(
         self: std::pin::Pin<&mut Self>,
         _cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<hyper::HeaderMap>, Self::Error>> {
+    ) -> Poll<Result<Option<hyper_0_14::HeaderMap>, Self::Error>> {
         Poll::Ready(Ok(None))
     }
 }

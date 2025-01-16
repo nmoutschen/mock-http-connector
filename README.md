@@ -6,7 +6,7 @@ that makes HTTP calls using [`hyper`].
 ## Usage
 
 ```rust
-# use hyper::{Body, Request};
+# use mock_http_connector::hyper::{Body, Request};
 # use mock_http_connector::{Connector, Error};
 # tokio_test::block_on(async move {
 // Create a mock Connector
@@ -19,7 +19,7 @@ builder
 let connector = builder.build();
 
 // Use it when creating the hyper Client
-let client = hyper::Client::builder().build::<_, Body>(connector.clone());
+let client = mock_http_connector::hyper::Client::builder().build::<_, Body>(connector.clone());
 
 // Send requests as normal
 let _res = client

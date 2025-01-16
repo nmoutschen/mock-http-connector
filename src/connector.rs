@@ -1,5 +1,5 @@
+use crate::hyper::{Request, Service, Uri};
 use colored::Colorize;
-use hyper::{service::Service, Request, Uri};
 use std::{
     cmp::max,
     collections::{BinaryHeap, HashSet},

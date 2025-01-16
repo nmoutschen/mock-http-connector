@@ -1,4 +1,6 @@
-use hyper::{body::to_bytes, Body, Request};
+#![cfg(feature = "hyper_0_14")]
+
+use hyper_0_14::{body::to_bytes, Body, Request};
 use mock_http_connector::Connector;
 use rstest::*;
 use speculoos::prelude::*;
@@ -15,7 +17,7 @@ async fn test_async() -> Result<(), Box<dyn StdError + Send + Sync>> {
         .with_uri("http://test.example")
         .returning(|_req| async { "hello" })?;
     let connector = builder.build();
-    let client = hyper::Client::builder().build::<_, Body>(connector.clone());
+    let client = hyper_0_14::Client::builder().build::<_, Body>(connector.clone());
 
     // WHEN making a request
     let res = client
@@ -50,7 +52,7 @@ async fn test_json() -> Result<(), Box<dyn StdError + Send + Sync>> {
         .returning(serde_json::json!({"value": 3}))?;
     let connector = builder.build();
 
-    let client = hyper::Client::builder().build::<_, Body>(connector.clone());
+    let client = hyper_0_14::Client::builder().build::<_, Body>(connector.clone());
 
     // WHEN making a request
     let res = client

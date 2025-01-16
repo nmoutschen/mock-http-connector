@@ -1,4 +1,6 @@
-use hyper::{http::HeaderName, Body, Method, Request};
+#![cfg(feature = "hyper_0_14")]
+
+use hyper_0_14::{http::HeaderName, Body, Method, Request};
 use mock_http_connector::Connector;
 use rstest::*;
 use speculoos::prelude::*;
@@ -18,7 +20,7 @@ async fn test_method(#[case] method: Method) -> Result<(), Box<dyn StdError + Se
         .returning((202, "OK"))?;
     let connector = builder.build();
 
-    let client = hyper::Client::builder().build::<_, Body>(connector.clone());
+    let client = hyper_0_14::Client::builder().build::<_, Body>(connector.clone());
 
     // WHEN making a request with the right Method
     let res = client
@@ -49,8 +51,8 @@ async fn test_method(#[case] method: Method) -> Result<(), Box<dyn StdError + Se
 }
 
 #[rstest]
-#[case(hyper::header::ACCEPT, "application/json")]
-#[case(hyper::header::AUTHORIZATION, "Bearer some-token")]
+#[case(hyper_0_14::header::ACCEPT, "application/json")]
+#[case(hyper_0_14::header::AUTHORIZATION, "Bearer some-token")]
 #[tokio::test]
 async fn test_header(
     #[case] name: HeaderName,
@@ -66,7 +68,7 @@ async fn test_header(
 
     let connector = builder.build();
 
-    let client = hyper::Client::builder().build::<_, Body>(connector.clone());
+    let client = hyper_0_14::Client::builder().build::<_, Body>(connector.clone());
 
     // WHEN making a request with the right header
     let res = client
@@ -111,9 +113,9 @@ async fn test_header(
 
 #[rstest]
 #[case(
-    hyper::header::ACCEPT,
+    hyper_0_14::header::ACCEPT,
     "application/json",
-    hyper::header::AUTHORIZATION,
+    hyper_0_14::header::AUTHORIZATION,
     "Bearer some-token"
 )]
 #[tokio::test]
@@ -133,7 +135,7 @@ async fn test_headers(
         .returning((202, "OK"))?;
     let connector = builder.build();
 
-    let client = hyper::Client::builder().build::<_, Body>(connector.clone());
+    let client = hyper_0_14::Client::builder().build::<_, Body>(connector.clone());
 
     // WHEN making a request with the right headers
     let res = client
@@ -179,7 +181,7 @@ async fn test_uri(#[case] uri: &'static str) -> Result<(), Box<dyn StdError + Se
         .returning((202, "OK"))?;
     let connector = builder.build();
 
-    let client = hyper::Client::builder().build::<_, Body>(connector.clone());
+    let client = hyper_0_14::Client::builder().build::<_, Body>(connector.clone());
 
     // WHEN making a request with the right URI
     let res = client

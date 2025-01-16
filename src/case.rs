@@ -59,7 +59,7 @@ impl Checkpoint {
 mod tests {
     use std::convert::Infallible;
 
-    use hyper::{Request, Response, StatusCode};
+    use crate::hyper::{Request, Response, StatusCode};
 
     use super::*;
 

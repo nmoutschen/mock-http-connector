@@ -7,11 +7,8 @@ use std::{
     task::{ready, Context, Poll, Waker},
 };
 
+use crate::hyper::{Connected, Connection, Response, Uri};
 use httparse::{Request, Status};
-use hyper::{
-    client::connect::{Connected, Connection},
-    Response, Uri,
-};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 use crate::{connector::InnerConnector, response::ResponseFuture, Error};

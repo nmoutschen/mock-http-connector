@@ -1,4 +1,6 @@
-use hyper::{Body, Request};
+#![cfg(feature = "hyper_0_14")]
+
+use hyper_0_14::{Body, Request};
 use mock_http_connector::Connector;
 
 #[tokio::main]
@@ -11,7 +13,7 @@ async fn main() {
         .unwrap();
     let connector = builder.build();
 
-    let client = hyper::Client::builder().build::<_, Body>(connector.clone());
+    let client = hyper_0_14::Client::builder().build::<_, Body>(connector.clone());
     let res = client
         .request(
             Request::builder()

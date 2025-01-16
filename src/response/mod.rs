@@ -2,7 +2,7 @@ mod future;
 pub use future::{IntoResponseFuture, ResponseFuture};
 
 use crate::error::BoxError;
-use hyper::{Response, StatusCode};
+use crate::hyper::{header, Response, StatusCode};
 use std::error::Error as StdError;
 
 /// Trait for values that can be transformed into `Result<Response<String>, BoxError>`
@@ -77,7 +77,7 @@ where
     }
 }
 
-impl<'s> IntoResponse for &'s str {
+impl IntoResponse for &'_ str {
     fn into_response(self) -> Result<Response<String>, BoxError> {
         Ok(Response::builder()
             .status(StatusCode::OK)
@@ -109,7 +109,7 @@ impl IntoResponse for serde_json::Value {
     fn into_response(self) -> Result<Response<String>, BoxError> {
         Ok(Response::builder()
             .status(StatusCode::OK)
-            .header(hyper::header::CONTENT_TYPE, "application/json")
+            .header(header::CONTENT_TYPE, "application/json")
             .body(serde_json::to_string(&self)?)?)
     }
 }

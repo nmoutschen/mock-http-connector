@@ -1,5 +1,5 @@
+use crate::hyper::Response;
 use crate::{error::BoxError, IntoResponse};
-use hyper::Response;
 use std::{future::Future, pin::Pin};
 
 pub type ResponseFuture =
