@@ -1,8 +1,9 @@
-use hyper::{Body, Request, Response, StatusCode};
 use mock_http_connector::Connector;
 use rstest::*;
 use speculoos::prelude::*;
 use std::error::Error as StdError;
+mod helpers;
+use helpers::*;
 
 #[rstest]
 #[case(StatusCode::ACCEPTED)]
@@ -23,7 +24,7 @@ async fn test_status_u16(
         .returning(status.as_u16())?;
     let connector = builder.build();
 
-    let client = hyper::Client::builder().build::<_, Body>(connector.clone());
+    let client = client(connector.clone());
 
     // WHEN making a request
     let res = client
@@ -62,7 +63,7 @@ async fn test_status_tuple(
         .returning((status.as_u16(), "moved"))?;
     let connector = builder.build();
 
-    let client = hyper::Client::builder().build::<_, Body>(connector.clone());
+    let client = client(connector.clone());
 
     // WHEN making a requests
     let res = client
@@ -105,7 +106,7 @@ async fn test_status_fn(#[case] status: StatusCode) -> Result<(), Box<dyn StdErr
         })?;
     let connector = builder.build();
 
-    let client = hyper::Client::builder().build::<_, Body>(connector.clone());
+    let client = client(connector.clone());
 
     // WHEN making a requests
     let res = client

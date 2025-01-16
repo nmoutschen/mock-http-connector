@@ -1,9 +1,9 @@
-use crate::{error::BoxError, Error};
-use colored::Colorize;
-use hyper::{
-    http::{HeaderName, HeaderValue},
+use crate::hyper::{
+    http::{self, HeaderName, HeaderValue},
     HeaderMap, Method, Request, Uri,
 };
+use crate::{error::BoxError, Error};
+use colored::Colorize;
 use itertools::Itertools;
 use std::{
     any::Any,
@@ -81,7 +81,7 @@ impl WithHandler {
     pub fn with_uri<U>(mut self, uri: U) -> Result<Self, Error>
     where
         U: TryInto<Uri>,
-        U::Error: Into<hyper::http::Error>,
+        U::Error: Into<http::Error>,
     {
         self.uri = Some(uri.try_into().map_err(Into::into)?);
         Ok(self)
@@ -90,7 +90,7 @@ impl WithHandler {
     pub fn with_method<M>(mut self, method: M) -> Result<Self, Error>
     where
         M: TryInto<Method>,
-        M::Error: Into<hyper::http::Error>,
+        M::Error: Into<http::Error>,
     {
         self.method = Some(method.try_into().map_err(Into::into)?);
         Ok(self)
@@ -99,9 +99,9 @@ impl WithHandler {
     pub fn with_header<K, V>(mut self, key: K, value: V) -> Result<Self, Error>
     where
         K: TryInto<HeaderName>,
-        K::Error: Into<hyper::http::Error>,
+        K::Error: Into<http::Error>,
         V: TryInto<HeaderValue>,
-        V::Error: Into<hyper::http::Error>,
+        V::Error: Into<http::Error>,
     {
         self.headers.push((
             key.try_into().map_err(Into::into)?,
@@ -114,9 +114,9 @@ impl WithHandler {
     pub fn with_header_once<K, V>(mut self, key: K, value: V) -> Result<Self, Error>
     where
         K: TryInto<HeaderName>,
-        K::Error: Into<hyper::http::Error>,
+        K::Error: Into<http::Error>,
         V: TryInto<HeaderValue>,
-        V::Error: Into<hyper::http::Error>,
+        V::Error: Into<http::Error>,
     {
         self.headers.push((
             key.try_into().map_err(Into::into)?,
@@ -129,10 +129,10 @@ impl WithHandler {
     pub fn with_header_all<K, IV, V>(mut self, key: K, values: IV) -> Result<Self, Error>
     where
         K: TryInto<HeaderName>,
-        K::Error: Into<hyper::http::Error>,
+        K::Error: Into<http::Error>,
         IV: IntoIterator<Item = V>,
         V: TryInto<HeaderValue>,
-        V::Error: Into<hyper::http::Error>,
+        V::Error: Into<http::Error>,
     {
         self.headers.push((
             key.try_into().map_err(Into::into)?,
@@ -203,6 +203,7 @@ impl With for WithHandler {
                     reasons.push(Reason::Body);
                 }
             }
+            #[cfg(feature = "json")]
             Some(Body::Json(body)) => {
                 let payload: serde_json::Value = serde_json::from_str(req.body())?;
 
@@ -210,6 +211,7 @@ impl With for WithHandler {
                     reasons.push(Reason::Body);
                 }
             }
+            #[cfg(feature = "json")]
             Some(Body::JsonPartial(body)) => {
                 let payload: serde_json::Value = serde_json::from_str(req.body())?;
 
@@ -284,6 +286,7 @@ impl With for WithHandler {
         }
 
         match &self.body {
+            #[cfg(feature = "json")]
             Some(Body::Json(body)) => {
                 print_body.push("full json match:".to_string());
                 let body = format!("{body:#}");
@@ -298,6 +301,7 @@ impl With for WithHandler {
                         .to_string(),
                 );
             }
+            #[cfg(feature = "json")]
             Some(Body::JsonPartial(body)) => {
                 print_body.push("partial json match:".to_string());
                 let body = format!("{body:#}");
@@ -381,6 +385,7 @@ fn check_headers(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hyper::header;
     use rstest::*;
     use speculoos::prelude::*;
 
@@ -398,7 +403,7 @@ mod tests {
     fn with_handler_uri<U>(#[case] uri: U)
     where
         U: TryInto<Uri>,
-        U::Error: Into<hyper::http::Error>,
+        U::Error: Into<http::Error>,
     {
         let with = WithHandler::default();
         assert_that!(with.with_uri(uri))
@@ -413,7 +418,7 @@ mod tests {
     fn with_handler_method<M>(#[case] method: M)
     where
         M: TryInto<Method>,
-        M::Error: Into<hyper::http::Error>,
+        M::Error: Into<http::Error>,
     {
         let with = WithHandler::default();
         assert_that!(with.with_method(method))
@@ -427,9 +432,9 @@ mod tests {
     fn with_handler_header<K, V>(#[case] key: K, #[case] value: V)
     where
         K: TryInto<HeaderName>,
-        K::Error: Into<hyper::http::Error>,
+        K::Error: Into<http::Error>,
         V: TryInto<HeaderValue>,
-        V::Error: Into<hyper::http::Error>,
+        V::Error: Into<http::Error>,
     {
         let with = WithHandler::default();
         assert_that!(with.with_header(key, value))
@@ -471,32 +476,23 @@ mod tests {
     }
 
     #[rstest]
-    #[case(hyper::header::AUTHORIZATION, HeaderCheck::AtLeastOnce("bearer 123".try_into().unwrap()), true)]
-    #[case(hyper::header::AUTHORIZATION, HeaderCheck::AtLeastOnce("bearer 1234".try_into().unwrap()), true)]
-    #[case(hyper::header::AUTHORIZATION, HeaderCheck::ExactlyOnce("bearer 123".try_into().unwrap()), false)]
-    #[case(hyper::header::AUTHORIZATION, HeaderCheck::ExactlyOnce("bearer 1234".try_into().unwrap()), false)]
-    #[case(hyper::header::AUTHORIZATION, HeaderCheck::All(vec!["bearer 123".try_into().unwrap()]), false)]
-    #[case(hyper::header::AUTHORIZATION, HeaderCheck::All(vec!["bearer 1234".try_into().unwrap()]), false)]
-    #[case(hyper::header::AUTHORIZATION, HeaderCheck::All(vec!["bearer 123".try_into().unwrap(), "bearer 1234".try_into().unwrap()]), true)]
-    #[case(hyper::header::AUTHORIZATION, HeaderCheck::All(vec!["bearer 1234".try_into().unwrap(), "bearer 123".try_into().unwrap()]), true)]
+    #[case(header::AUTHORIZATION, HeaderCheck::AtLeastOnce("bearer 123".try_into().unwrap()), true)]
+    #[case(header::AUTHORIZATION, HeaderCheck::AtLeastOnce("bearer 1234".try_into().unwrap()), true)]
+    #[case(header::AUTHORIZATION, HeaderCheck::ExactlyOnce("bearer 123".try_into().unwrap()), false)]
+    #[case(header::AUTHORIZATION, HeaderCheck::ExactlyOnce("bearer 1234".try_into().unwrap()), false)]
+    #[case(header::AUTHORIZATION, HeaderCheck::All(vec!["bearer 123".try_into().unwrap()]), false)]
+    #[case(header::AUTHORIZATION, HeaderCheck::All(vec!["bearer 1234".try_into().unwrap()]), false)]
+    #[case(header::AUTHORIZATION, HeaderCheck::All(vec!["bearer 123".try_into().unwrap(), "bearer 1234".try_into().unwrap()]), true)]
+    #[case(header::AUTHORIZATION, HeaderCheck::All(vec!["bearer 1234".try_into().unwrap(), "bearer 123".try_into().unwrap()]), true)]
     fn test_check_headers(
         #[case] key: HeaderName,
         #[case] value: HeaderCheck,
         #[case] expected: bool,
     ) {
         let mut headers = HeaderMap::new();
-        headers.append(
-            hyper::header::AUTHORIZATION,
-            "bearer 123".try_into().unwrap(),
-        );
-        headers.append(
-            hyper::header::AUTHORIZATION,
-            "bearer 1234".try_into().unwrap(),
-        );
-        headers.append(
-            hyper::header::CONTENT_TYPE,
-            "application/json".try_into().unwrap(),
-        );
+        headers.append(header::AUTHORIZATION, "bearer 123".try_into().unwrap());
+        headers.append(header::AUTHORIZATION, "bearer 1234".try_into().unwrap());
+        headers.append(header::CONTENT_TYPE, "application/json".try_into().unwrap());
 
         assert_that!(check_headers(&headers, &key, &value)).is_equal_to(expected);
     }

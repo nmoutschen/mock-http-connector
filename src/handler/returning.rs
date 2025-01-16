@@ -1,5 +1,5 @@
+use crate::hyper::{Request, Response, StatusCode};
 use crate::{error::BoxError, response::ResponseFuture, IntoResponseFuture};
-use hyper::{Request, Response, StatusCode};
 use std::{borrow::Cow, convert::Infallible, error::Error as StdError};
 
 /// Trait for responses matching mock cases
@@ -14,27 +14,27 @@ pub trait Sealed {}
 macro_rules! returning {
     // With no status
     ($type:ty, $body:expr, $($lt:lifetime),+) => {
-        returning!($type, $body, |_| Ok::<_, ::std::convert::Infallible>(::hyper::StatusCode::OK), |_| Ok::<_, ::std::convert::Infallible>(::hyper::HeaderMap::new()), $($lt),+);
+        returning!($type, $body, |_| Ok::<_, ::std::convert::Infallible>(crate::hyper::StatusCode::OK), |_| Ok::<_, ::std::convert::Infallible>(crate::hyper::HeaderMap::new()), $($lt),+);
     };
     ($type:ty, $body:expr) => {
-        returning!($type, $body, |_| Ok::<_, ::std::convert::Infallible>(::hyper::StatusCode::OK), |_| Ok::<_, ::std::convert::Infallible>(::hyper::HeaderMap::new()));
+        returning!($type, $body, |_| Ok::<_, ::std::convert::Infallible>(crate::hyper::StatusCode::OK), |_| Ok::<_, ::std::convert::Infallible>(crate::hyper::HeaderMap::new()));
     };
 
     // With no headers
     ($type:ty, $body:expr, $status:expr, $($lt:lifetime),+) => {
-        returning!($type, $body, $status, |_| Ok::<_, ::std::convert::Infallible>(::hyper::HeaderMap::new()), $($lt),+);
+        returning!($type, $body, $status, |_| Ok::<_, ::std::convert::Infallible>(crate::hyper::HeaderMap::new()), $($lt),+);
     };
     ($type:ty, $body:expr, $status:expr) => {
-        returning!($type, $body, $status, |_| Ok::<_, ::std::convert::Infallible>(::hyper::HeaderMap::new()));
+        returning!($type, $body, $status, |_| Ok::<_, ::std::convert::Infallible>(crate::hyper::HeaderMap::new()));
     };
 
     ($type:ty, $body:expr, $status:expr, $headers:expr, $($lt:lifetime),+) => {
         impl<$($lt),+> Returning for $type {
             #[allow(clippy::redundant_closure_call)]
-            fn returning(&self, _req: ::hyper::Request<String>) -> ResponseFuture {
+            fn returning(&self, _req: crate::hyper::Request<String>) -> ResponseFuture {
                 #[allow(clippy::ptr_arg)]
                 fn response<$($lt),+>(s: &$type) -> Result<Response<String>, BoxError> {
-                    let mut res = ::hyper::Response::builder();
+                    let mut res = crate::hyper::Response::builder();
 
                     for (k, v) in ($headers)(s)?.iter() {
                         res = res.header(k, v);
@@ -57,9 +57,9 @@ macro_rules! returning {
     ($type:ty, $body:expr, $status:expr, $headers:expr) => {
         impl Returning for $type {
             #[allow(clippy::redundant_closure_call)]
-            fn returning(&self, _req: ::hyper::Request<String>) -> ResponseFuture {
+            fn returning(&self, _req: crate::hyper::Request<String>) -> ResponseFuture {
                 fn response(s: &$type) -> Result<Response<String>, BoxError> {
-                    let mut res = ::hyper::Response::builder();
+                    let mut res = crate::hyper::Response::builder();
 
                     for (k, v) in ($headers)(s)?.iter() {
                         res = res.header(k, v);

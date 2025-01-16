@@ -6,6 +6,7 @@ mod case;
 mod connector;
 mod error;
 mod handler;
+pub mod hyper;
 mod level;
 mod response;
 mod stream;

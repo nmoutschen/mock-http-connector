@@ -10,23 +10,19 @@ name: CI
 jobs:
   cargo_ci:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        features:
+          - json,hyper_1
+          - json,hyper_0_14
+          - hyper_1
+          - hyper_0_14
     steps:
       - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
+      - uses: dtolnay/rust-toolchain@stable
       - name: cargo fmt
-        uses: actions-rs/cargo@v1
-        continue-on-error: true  # WARNING: only for this example, remove it!
-        with:
-          command: fmt
-          args: --all -- --check
+        run: cargo fmt --all -- --check
       - name: cargo clippy
-        uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-features
+        run: cargo clippy --no-default-features --features ${{ matrix.features }}
       - name: cargo test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
+        run: cargo test --no-default-features --features ${{ matrix.features }}

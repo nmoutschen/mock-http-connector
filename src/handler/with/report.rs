@@ -1,6 +1,6 @@
 use std::{borrow::Cow, collections::HashSet};
 
-use hyper::http::HeaderName;
+use crate::hyper::http::HeaderName;
 
 /// Report if a `with` clause for a case matched with an incoming request
 ///
