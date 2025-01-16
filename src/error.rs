@@ -17,6 +17,11 @@ pub enum Error {
     #[error("http error: {0}")]
     Http(#[from] crate::hyper::http::Error),
 
+    /// Error from [`hyper_util`]
+    #[cfg(feature = "hyper_1")]
+    #[error("hyper_util client error: {0}")]
+    HyperLegacy(#[from] hyper_util::client::legacy::Error),
+
     /// Error from [`httparse`]
     #[error("httparse error: {0}")]
     Httparse(#[from] httparse::Error),

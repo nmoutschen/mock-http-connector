@@ -19,7 +19,7 @@ builder
 let connector = builder.build();
 
 // Use it when creating the hyper Client
-let client = mock_http_connector::hyper::Client::builder().build::<_, Body>(connector.clone());
+let client = mock_http_connector::hyper::client_builder().build::<_, Body>(connector.clone());
 
 // Send requests as normal
 let _res = client

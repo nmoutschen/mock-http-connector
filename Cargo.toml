@@ -11,10 +11,10 @@ readme = "README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["json", "hyper_0_14"]
+default = ["json", "hyper_1"]
 json = ["dep:serde_json", "dep:serde"]
 hyper_0_14 = ["dep:hyper_0_14"]
-hyper_1 = ["dep:hyper_1", "dep:hyper-util"]
+hyper_1 = ["dep:hyper_1", "dep:hyper-util", "dep:http-body-util"]
 
 [dependencies]
 hyper_0_14 = { package = "hyper", version = "0.14.24", features = [
@@ -25,7 +25,12 @@ hyper_1 = { package = "hyper", version = "1.5.2", features = [
     "client",
     "http1",
 ], optional = true }
-hyper-util = { version = "0.1.10", features = ["client"], optional = true }
+hyper-util = { version = "0.1.10", features = [
+    "http1",
+    "client",
+    "client-legacy",
+], optional = true }
+http-body-util = { version = "0.1.2", optional = true }
 colored = "2.0.4"
 httparse = "1.8.0"
 itertools = "0.10.5"
@@ -34,6 +39,7 @@ serde = { version = "1.0.152", optional = true }
 serde_json = { version = "1.0.93", optional = true }
 thiserror = "1.0.38"
 tokio = { version = "1.25.0", features = ["io-util"] }
+tower = "0.5.2"
 
 [dev-dependencies]
 hyper_0_14 = { package = "hyper", version = "0.14.24", features = [

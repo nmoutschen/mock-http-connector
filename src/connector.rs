@@ -1,4 +1,4 @@
-use crate::hyper::{Request, Service, Uri};
+use crate::hyper::{Request, Uri};
 use colored::Colorize;
 use std::{
     cmp::max,
@@ -7,7 +7,6 @@ use std::{
     io,
     str::from_utf8,
     sync::{atomic::Ordering, Arc},
-    task::{Context, Poll},
 };
 
 use crate::{
@@ -94,13 +93,16 @@ impl InnerConnector {
     }
 }
 
-impl Service<Uri> for Connector {
+impl tower::Service<Uri> for Connector {
     type Response = MockStream;
     type Error = io::Error;
     type Future = Ready<Result<Self::Response, Self::Error>>;
 
-    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, req: Uri) -> Self::Future {

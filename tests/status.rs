@@ -1,6 +1,4 @@
-#![cfg(feature = "hyper_0_14")]
-
-use hyper_0_14::{Body, Request, Response, StatusCode};
+use mock_http_connector::hyper::{client_builder, Body, Request, Response, StatusCode};
 use mock_http_connector::Connector;
 use rstest::*;
 use speculoos::prelude::*;
@@ -25,7 +23,7 @@ async fn test_status_u16(
         .returning(status.as_u16())?;
     let connector = builder.build();
 
-    let client = hyper_0_14::Client::builder().build::<_, Body>(connector.clone());
+    let client = client_builder().build::<_, Body>(connector.clone());
 
     // WHEN making a request
     let res = client
@@ -64,7 +62,7 @@ async fn test_status_tuple(
         .returning((status.as_u16(), "moved"))?;
     let connector = builder.build();
 
-    let client = hyper_0_14::Client::builder().build::<_, Body>(connector.clone());
+    let client = client_builder().build::<_, Body>(connector.clone());
 
     // WHEN making a requests
     let res = client
@@ -107,7 +105,7 @@ async fn test_status_fn(#[case] status: StatusCode) -> Result<(), Box<dyn StdErr
         })?;
     let connector = builder.build();
 
-    let client = hyper_0_14::Client::builder().build::<_, Body>(connector.clone());
+    let client = client_builder().build::<_, Body>(connector.clone());
 
     // WHEN making a requests
     let res = client
