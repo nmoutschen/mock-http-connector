@@ -6,7 +6,14 @@ that makes HTTP calls using [`hyper`].
 ## Usage
 
 ```rust
-# use mock_http_connector::hyper::{Body, Request};
+# #[cfg(feature = "hyper_0_14")]
+# use hyper_0_14::{Body, Request};
+# #[cfg(feature = "hyper_1")]
+# use hyper_1::{body::Bytes, Request};
+# #[cfg(feature = "hyper_1")]
+# use http_body_util::Full;
+# #[cfg(feature = "hyper_1")]
+# use hyper_util::rt::TokioExecutor;
 # use mock_http_connector::{Connector, Error};
 # tokio_test::block_on(async move {
 // Create a mock Connector
@@ -19,7 +26,10 @@ builder
 let connector = builder.build();
 
 // Use it when creating the hyper Client
-let client = mock_http_connector::hyper::client_builder().build::<_, Body>(connector.clone());
+#[cfg(feature = "hyper_0_14")]
+let client = hyper_0_14::Client::builder().build::<_, Body>(connector.clone());
+#[cfg(feature = "hyper_1")]
+let client = hyper_util::client::legacy::Client::builder(TokioExecutor::new()).build::<_, Full<Bytes>>(connector.clone());
 
 // Send requests as normal
 let _res = client

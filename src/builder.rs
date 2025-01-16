@@ -75,7 +75,10 @@ impl<'c> CaseBuilder<'c> {
     /// ## Example
     ///
     /// ```rust
-    /// # use mock_http_connector::hyper::{Response, Request};
+    /// # #[cfg(feature = "hyper_0_14")]
+    /// # use hyper_0_14::{Response, Request};
+    /// # #[cfg(feature = "hyper_1")]
+    /// # use hyper_1::{Response, Request};
     /// # use mock_http_connector::{Connector, Error};
     /// # use std::convert::Infallible;
     /// # || {
@@ -105,7 +108,10 @@ impl<'c> CaseBuilder<'c> {
     /// ## Example
     ///
     /// ```rust
-    /// # use mock_http_connector::hyper::Response;
+    /// # #[cfg(feature = "hyper_0_14")]
+    /// # use hyper_0_14::Response;
+    /// # #[cfg(feature = "hyper_1")]
+    /// # use hyper_1::Response;
     /// # use mock_http_connector::{Connector, Error};
     /// # || {
     /// let mut builder = Connector::builder();
@@ -137,7 +143,10 @@ impl<'c> CaseBuilder<'c> {
     /// ## Example
     ///
     /// ```rust
-    /// # use mock_http_connector::hyper::Response;
+    /// # #[cfg(feature = "hyper_0_14")]
+    /// # use hyper_0_14::Response;
+    /// # #[cfg(feature = "hyper_1")]
+    /// # use hyper_1::Response;
     /// # use mock_http_connector::{Connector, Error};
     /// # || {
     /// let mut builder = Connector::builder();
@@ -173,7 +182,10 @@ impl<'c> CaseBuilder<'c> {
     /// ## Example
     ///
     /// ```rust
-    /// # use mock_http_connector::hyper::Response;
+    /// # #[cfg(feature = "hyper_0_14")]
+    /// # use hyper_0_14::Response;
+    /// # #[cfg(feature = "hyper_1")]
+    /// # use hyper_1::Response;
     /// # use mock_http_connector::{Connector, Error};
     /// # || {
     /// let mut builder = Connector::builder();
@@ -210,7 +222,10 @@ impl<'c> CaseBuilder<'c> {
     /// ## Example
     ///
     /// ```rust
-    /// # use mock_http_connector::hyper::Response;
+    /// # #[cfg(feature = "hyper_0_14")]
+    /// # use hyper_0_14::Response;
+    /// # #[cfg(feature = "hyper_1")]
+    /// # use hyper_1::Response;
     /// # use mock_http_connector::{Connector, Error};
     /// # || {
     /// let mut builder = Connector::builder();
@@ -253,7 +268,10 @@ impl<'c> CaseBuilder<'c> {
     /// ## Example
     ///
     /// ```rust
-    /// # use mock_http_connector::hyper::Response;
+    /// # #[cfg(feature = "hyper_0_14")]
+    /// # use hyper_0_14::Response;
+    /// # #[cfg(feature = "hyper_1")]
+    /// # use hyper_1::Response;
     /// # use mock_http_connector::{Connector, Error};
     /// # || {
     /// let mut builder = Connector::builder();
@@ -288,7 +306,10 @@ impl<'c> CaseBuilder<'c> {
     /// ## Example
     ///
     /// ```rust
-    /// # use mock_http_connector::hyper::Response;
+    /// # #[cfg(feature = "hyper_0_14")]
+    /// # use hyper_0_14::Response;
+    /// # #[cfg(feature = "hyper_1")]
+    /// # use hyper_1::Response;
     /// # use mock_http_connector::{Connector, Error};
     /// # || {
     /// let mut builder = Connector::builder();
@@ -322,7 +343,10 @@ impl<'c> CaseBuilder<'c> {
     /// ## Example
     ///
     /// ```rust
-    /// # use mock_http_connector::hyper::Response;
+    /// # #[cfg(feature = "hyper_0_14")]
+    /// # use hyper_0_14::Response;
+    /// # #[cfg(feature = "hyper_1")]
+    /// # use hyper_1::Response;
     /// # use mock_http_connector::{Connector, Error};
     /// # || {
     /// let mut builder = Connector::builder();
@@ -355,6 +379,7 @@ impl<'c> CaseBuilder<'c> {
     /// Match requests that contains the provided JSON payload, but may contain other properties
     ///
     /// You can combine this with other validators, such as `with_uri`, but not with `with`.
+    #[cfg(feature = "json")]
     pub fn with_json_partial<V>(self, value: V) -> CaseBuilder<'c, WithHandler>
     where
         V: serde::Serialize,

@@ -1,8 +1,9 @@
-use mock_http_connector::hyper::{client_builder, to_bytes, Body, Request};
 use mock_http_connector::Connector;
 use rstest::*;
 use speculoos::prelude::*;
 use std::{error::Error as StdError, str::from_utf8};
+mod helpers;
+use helpers::*;
 
 #[rstest]
 #[tokio::test]
@@ -15,7 +16,7 @@ async fn test_async() -> Result<(), Box<dyn StdError + Send + Sync>> {
         .with_uri("http://test.example")
         .returning(|_req| async { "hello" })?;
     let connector = builder.build();
-    let client = mock_http_connector::hyper::client_builder().build::<_, Body>(connector.clone());
+    let client = client(connector.clone());
 
     // WHEN making a request
     let res = client
@@ -38,6 +39,7 @@ async fn test_async() -> Result<(), Box<dyn StdError + Send + Sync>> {
     Ok(())
 }
 
+#[cfg(feature = "json")]
 #[rstest]
 #[tokio::test]
 async fn test_json() -> Result<(), Box<dyn StdError + Send + Sync>> {
@@ -50,7 +52,7 @@ async fn test_json() -> Result<(), Box<dyn StdError + Send + Sync>> {
         .returning(serde_json::json!({"value": 3}))?;
     let connector = builder.build();
 
-    let client = client_builder().build::<_, Body>(connector.clone());
+    let client = client(connector.clone());
 
     // WHEN making a request
     let res = client

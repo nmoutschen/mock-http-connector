@@ -1,5 +1,6 @@
-use mock_http_connector::hyper::{client_builder, http::HeaderName, Body, Method, Request};
 use mock_http_connector::Connector;
+mod helpers;
+use helpers::*;
 use rstest::*;
 use speculoos::prelude::*;
 use std::error::Error as StdError;
@@ -18,7 +19,7 @@ async fn test_method(#[case] method: Method) -> Result<(), Box<dyn StdError + Se
         .returning((202, "OK"))?;
     let connector = builder.build();
 
-    let client = client_builder().build::<_, Body>(connector.clone());
+    let client = client(connector.clone());
 
     // WHEN making a request with the right Method
     let res = client
@@ -49,11 +50,8 @@ async fn test_method(#[case] method: Method) -> Result<(), Box<dyn StdError + Se
 }
 
 #[rstest]
-#[case(mock_http_connector::hyper::http::header::ACCEPT, "application/json")]
-#[case(
-    mock_http_connector::hyper::http::header::AUTHORIZATION,
-    "Bearer some-token"
-)]
+#[case(http::header::ACCEPT, "application/json")]
+#[case(http::header::AUTHORIZATION, "Bearer some-token")]
 #[tokio::test]
 async fn test_header(
     #[case] name: HeaderName,
@@ -69,7 +67,7 @@ async fn test_header(
 
     let connector = builder.build();
 
-    let client = client_builder().build::<_, Body>(connector.clone());
+    let client = client(connector.clone());
 
     // WHEN making a request with the right header
     let res = client
@@ -114,9 +112,9 @@ async fn test_header(
 
 #[rstest]
 #[case(
-    mock_http_connector::hyper::http::header::ACCEPT,
+    http::header::ACCEPT,
     "application/json",
-    mock_http_connector::hyper::http::header::AUTHORIZATION,
+    http::header::AUTHORIZATION,
     "Bearer some-token"
 )]
 #[tokio::test]
@@ -136,7 +134,7 @@ async fn test_headers(
         .returning((202, "OK"))?;
     let connector = builder.build();
 
-    let client = client_builder().build::<_, Body>(connector.clone());
+    let client = client(connector.clone());
 
     // WHEN making a request with the right headers
     let res = client
@@ -182,7 +180,7 @@ async fn test_uri(#[case] uri: &'static str) -> Result<(), Box<dyn StdError + Se
         .returning((202, "OK"))?;
     let connector = builder.build();
 
-    let client = client_builder().build::<_, Body>(connector.clone());
+    let client = client(connector.clone());
 
     // WHEN making a request with the right URI
     let res = client

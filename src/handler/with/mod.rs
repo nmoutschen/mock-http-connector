@@ -203,6 +203,7 @@ impl With for WithHandler {
                     reasons.push(Reason::Body);
                 }
             }
+            #[cfg(feature = "json")]
             Some(Body::Json(body)) => {
                 let payload: serde_json::Value = serde_json::from_str(req.body())?;
 
@@ -210,6 +211,7 @@ impl With for WithHandler {
                     reasons.push(Reason::Body);
                 }
             }
+            #[cfg(feature = "json")]
             Some(Body::JsonPartial(body)) => {
                 let payload: serde_json::Value = serde_json::from_str(req.body())?;
 
@@ -284,6 +286,7 @@ impl With for WithHandler {
         }
 
         match &self.body {
+            #[cfg(feature = "json")]
             Some(Body::Json(body)) => {
                 print_body.push("full json match:".to_string());
                 let body = format!("{body:#}");
@@ -298,6 +301,7 @@ impl With for WithHandler {
                         .to_string(),
                 );
             }
+            #[cfg(feature = "json")]
             Some(Body::JsonPartial(body)) => {
                 print_body.push("partial json match:".to_string());
                 let body = format!("{body:#}");

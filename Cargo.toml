@@ -1,6 +1,6 @@
 [package]
 name = "mock-http-connector"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2021"
 authors = ["Nicolas Moutschen <nicolas.moutschen@gmail.com>"]
 description = "Mock hyper HTTPConnector"
@@ -11,7 +11,7 @@ readme = "README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["json", "hyper_1"]
+default = ["json", "hyper_0_14"]
 json = ["dep:serde_json", "dep:serde"]
 hyper_0_14 = ["dep:hyper_0_14"]
 hyper_1 = ["dep:hyper_1", "dep:hyper-util", "dep:http-body-util"]
