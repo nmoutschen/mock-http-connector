@@ -18,7 +18,6 @@ async fn test_method(#[case] method: Method) -> Result<(), Box<dyn StdError + Se
         .with_method(method.clone())
         .returning((202, "OK"))?;
     let connector = builder.build();
-
     let client = client(connector.clone());
 
     // WHEN making a request with the right Method

@@ -23,7 +23,6 @@ async fn test_status_u16(
         .with_uri("http://test.example")
         .returning(status.as_u16())?;
     let connector = builder.build();
-
     let client = client(connector.clone());
 
     // WHEN making a request
@@ -62,7 +61,6 @@ async fn test_status_tuple(
         .with_uri("http://test.example")
         .returning((status.as_u16(), "moved"))?;
     let connector = builder.build();
-
     let client = client(connector.clone());
 
     // WHEN making a requests
@@ -105,7 +103,6 @@ async fn test_status_fn(#[case] status: StatusCode) -> Result<(), Box<dyn StdErr
                 .body("")
         })?;
     let connector = builder.build();
-
     let client = client(connector.clone());
 
     // WHEN making a requests
