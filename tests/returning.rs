@@ -51,7 +51,6 @@ async fn test_json() -> Result<(), Box<dyn StdError + Send + Sync>> {
         .with_uri("http://test.example")
         .returning(serde_json::json!({"value": 3}))?;
     let connector = builder.build();
-
     let client = client(connector.clone());
 
     // WHEN making a request
