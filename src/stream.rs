@@ -133,7 +133,7 @@ impl AsyncWrite for MockStream {
 
         self.res = ResponseState::Fut(
             self.connector
-                .matches(req, body, &self.uri)
+                .matches_raw(req, body, &self.uri)
                 .map_err(into_connect_error)?,
         );
 
@@ -167,7 +167,7 @@ impl hyper_1::rt::Write for MockStream {
 
         self.res = ResponseState::Fut(
             self.connector
-                .matches(req, body, &self.uri)
+                .matches_raw(req, body, &self.uri)
                 .map_err(into_connect_error)?,
         );
 
