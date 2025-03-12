@@ -119,12 +119,13 @@ impl tower::Service<Uri> for Connector {
 #[cfg(feature = "hyper_0_14")]
 impl<T> tower::Service<Request<T>> for Connector
 where
-    T: hyper_0_14::body::HttpBody + 'static,
+    T: hyper_0_14::body::HttpBody + Send + Sync + 'static,
+    T::Data: Send + Sync,
     T::Error: StdError + Send + Sync,
 {
     type Response = Response<String>;
     type Error = Box<dyn StdError + Send + Sync>;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>>>>;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + Sync>>;
 
     fn poll_ready(
         &mut self,
@@ -148,12 +149,13 @@ where
 #[cfg(feature = "hyper_1")]
 impl<T> tower::Service<Request<T>> for Connector
 where
-    T: http_body::Body + 'static,
+    T: http_body::Body + Send + Sync + 'static,
+    T::Data: Send + Sync,
     T::Error: StdError + Send + Sync,
 {
     type Response = Response<String>;
     type Error = Box<dyn StdError + Send + Sync>;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>>>>;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + Sync>>;
 
     fn poll_ready(
         &mut self,
