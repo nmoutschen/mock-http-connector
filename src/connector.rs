@@ -1,10 +1,12 @@
-use crate::hyper::{Request, Uri};
+use crate::hyper::{Request, Response, Uri};
 use colored::Colorize;
 use std::{
     cmp::max,
     collections::{BinaryHeap, HashSet},
-    future::{ready, Ready},
+    error::Error as StdError,
+    future::{ready, Future, Ready},
     io,
+    pin::Pin,
     str::from_utf8,
     sync::{atomic::Ordering, Arc},
 };
@@ -63,14 +65,7 @@ impl InnerConnector {
         }
     }
 
-    pub(crate) fn matches(
-        &self,
-        req: httparse::Request,
-        body: &[u8],
-        uri: &Uri,
-    ) -> Result<ResponseFuture, Error> {
-        let req = into_request(req, body, uri)?;
-
+    pub(crate) fn matches_request(&self, req: Request<String>) -> Result<ResponseFuture, Error> {
         let mut reports = Vec::new();
 
         for case in self.cases.iter() {
@@ -91,6 +86,17 @@ impl InnerConnector {
         }
         Err(Error::NotFound(req))
     }
+
+    pub(crate) fn matches_raw(
+        &self,
+        req: httparse::Request,
+        body: &[u8],
+        uri: &Uri,
+    ) -> Result<ResponseFuture, Error> {
+        let req = into_request(req, body, uri)?;
+
+        self.matches_request(req)
+    }
 }
 
 impl tower::Service<Uri> for Connector {
@@ -107,6 +113,72 @@ impl tower::Service<Uri> for Connector {
 
     fn call(&mut self, req: Uri) -> Self::Future {
         ready(Ok(MockStream::new(self.inner.clone(), req)))
+    }
+}
+
+#[cfg(feature = "hyper_0_14")]
+impl<T> tower::Service<Request<T>> for Connector
+where
+    T: hyper_0_14::body::HttpBody + From<String> + 'static,
+    T::Error: StdError + Send + Sync,
+{
+    type Response = Response<T>;
+    type Error = Box<dyn StdError + Send + Sync>;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>>>>;
+
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, req: Request<T>) -> Self::Future {
+        let inner = self.inner.clone();
+        Box::pin(async move {
+            let (parts, body) = req.into_parts();
+            let body = from_utf8(&hyper_0_14::body::to_bytes(body).await?)?.to_string();
+            let req = Request::from_parts(parts, body);
+
+            inner
+                .matches_request(req)?
+                .await
+                .map(|res| res.map(|body| Into::<T>::into(body)))
+        })
+    }
+}
+
+#[cfg(feature = "hyper_1")]
+impl<T> tower::Service<Request<T>> for Connector
+where
+    T: http_body::Body + From<String> + 'static,
+    T::Error: StdError + Send + Sync,
+{
+    type Response = Response<T>;
+    type Error = Box<dyn StdError + Send + Sync>;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>>>>;
+
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, req: Request<T>) -> Self::Future {
+        let inner = self.inner.clone();
+        Box::pin(async move {
+            let (parts, body) = req.into_parts();
+
+            let body =
+                from_utf8(&http_body_util::BodyExt::collect(body).await?.to_bytes())?.to_string();
+            let req = Request::from_parts(parts, body);
+
+            inner
+                .matches_request(req)?
+                .await
+                .map(|res| res.map(|body| Into::<T>::into(body)))
+        })
     }
 }
 
