@@ -119,10 +119,10 @@ impl tower::Service<Uri> for Connector {
 #[cfg(feature = "hyper_0_14")]
 impl<T> tower::Service<Request<T>> for Connector
 where
-    T: hyper_0_14::body::HttpBody + From<String> + 'static,
+    T: hyper_0_14::body::HttpBody + 'static,
     T::Error: StdError + Send + Sync,
 {
-    type Response = Response<T>;
+    type Response = Response<String>;
     type Error = Box<dyn StdError + Send + Sync>;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>>>>;
 
@@ -140,10 +140,7 @@ where
             let body = from_utf8(&hyper_0_14::body::to_bytes(body).await?)?.to_string();
             let req = Request::from_parts(parts, body);
 
-            inner
-                .matches_request(req)?
-                .await
-                .map(|res| res.map(|body| Into::<T>::into(body)))
+            inner.matches_request(req)?.await
         })
     }
 }
@@ -151,10 +148,10 @@ where
 #[cfg(feature = "hyper_1")]
 impl<T> tower::Service<Request<T>> for Connector
 where
-    T: http_body::Body + From<String> + 'static,
+    T: http_body::Body + 'static,
     T::Error: StdError + Send + Sync,
 {
-    type Response = Response<T>;
+    type Response = Response<String>;
     type Error = Box<dyn StdError + Send + Sync>;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>>>>;
 
@@ -174,10 +171,7 @@ where
                 from_utf8(&http_body_util::BodyExt::collect(body).await?.to_bytes())?.to_string();
             let req = Request::from_parts(parts, body);
 
-            inner
-                .matches_request(req)?
-                .await
-                .map(|res| res.map(|body| Into::<T>::into(body)))
+            inner.matches_request(req)?.await
         })
     }
 }
